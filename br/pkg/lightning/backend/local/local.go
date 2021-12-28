@@ -2846,7 +2846,11 @@ func (w *Writer) appendRowsUnsorted(ctx context.Context, kvs []common.KvPair) er
 	if cnt > 0 {
 		lastKey = w.writeBatch[cnt-1].Key
 	}
+	// TODO: delete later;
+	fmt.Printf("appendRowsUnsorted kvs %d records:\n", len(kvs))
 	for _, pair := range kvs {
+		// TODO: delete later;
+		fmt.Printf("\t %d: %x,%x.\n", pair.RowID, pair.Key, pair.Val)
 		if w.isWriteBatchSorted && bytes.Compare(lastKey, pair.Key) > 0 {
 			w.isWriteBatchSorted = false
 		}
