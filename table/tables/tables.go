@@ -28,6 +28,10 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tipb/go-binlog"
+	"github.com/pingcap/tipb/go-tipb"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta"
 	"github.com/pingcap/tidb/meta/autoid"
@@ -39,6 +43,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/table"
+	context2 "github.com/pingcap/tidb/table/tables/context"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util"
@@ -48,9 +53,6 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/stringutil"
 	"github.com/pingcap/tidb/util/tableutil"
-	"github.com/pingcap/tipb/go-binlog"
-	"github.com/pingcap/tipb/go-tipb"
-	"go.uber.org/zap"
 )
 
 // TableCommon is shared by both Table and partition.
@@ -500,8 +502,8 @@ func (t *TableCommon) rebuildIndices(ctx sessionctx.Context, txn kv.Transaction,
 }
 
 // adjustRowValuesBuf adjust writeBufs.AddRowValues length, AddRowValues stores the inserting values that is used
-// by tablecodec.EncodeRow, the encoded row format is `id1, colval, id2, colval`, so the correct length is rowLen * 2. If
-// the inserting row has null value, AddRecord will skip it, so the rowLen will be different, so we need to adjust it.
+// by tablecodec.EncodeRow, the encoded Row format is `id1, colval, id2, colval`, so the correct length is rowLen * 2. If
+// the inserting Row has null value, AddRecord will skip it, so the rowLen will be different, so we need to adjust it.
 func adjustRowValuesBuf(writeBufs *variable.WriteStmtBufs, rowLen int) {
 	adjustLen := rowLen * 2
 	if writeBufs.AddRowValues == nil || cap(writeBufs.AddRowValues) < adjustLen {
@@ -522,14 +524,6 @@ func FindPrimaryIndex(tblInfo *model.TableInfo) *model.IndexInfo {
 	return pkIdx
 }
 
-// CommonAddRecordCtx is used in `AddRecord` to avoid memory malloc for some temp slices.
-// This is useful in lightning parse row data to key-values pairs. This can gain upto 5%  performance
-// improvement in lightning's local mode.
-type CommonAddRecordCtx struct {
-	colIDs []int64
-	row    []types.Datum
-}
-
 // commonAddRecordKey is used as key in `sessionctx.Context.Value(key)`
 type commonAddRecordKey struct{}
 
@@ -538,25 +532,17 @@ func (c commonAddRecordKey) String() string {
 	return "_common_add_record_context_key"
 }
 
-// addRecordCtxKey is key in `sessionctx.Context` for CommonAddRecordCtx
-var addRecordCtxKey = commonAddRecordKey{}
+// AddRecordCtxKey is key in `sessionctx.Context` for CommonAddRecordCtx
+var AddRecordCtxKey = commonAddRecordKey{}
 
 // SetAddRecordCtx set a CommonAddRecordCtx to session context
-func SetAddRecordCtx(ctx sessionctx.Context, r *CommonAddRecordCtx) {
-	ctx.SetValue(addRecordCtxKey, r)
+func SetAddRecordCtx(ctx sessionctx.Context, r *context2.CommonAddRecordCtx) {
+	ctx.SetValue(AddRecordCtxKey, r)
 }
 
 // ClearAddRecordCtx remove `CommonAddRecordCtx` from session context
 func ClearAddRecordCtx(ctx sessionctx.Context) {
-	ctx.ClearValue(addRecordCtxKey)
-}
-
-// NewCommonAddRecordCtx create a context used for `AddRecord`
-func NewCommonAddRecordCtx(size int) *CommonAddRecordCtx {
-	return &CommonAddRecordCtx{
-		colIDs: make([]int64, 0, size),
-		row:    make([]types.Datum, 0, size),
-	}
+	ctx.ClearValue(AddRecordCtxKey)
 }
 
 // TryGetCommonPkColumnIds get the IDs of primary key column if the table has common handle.
@@ -717,9 +703,9 @@ func (t *TableCommon) AddRecord(sctx sessionctx.Context, r []types.Datum, opts .
 
 	var colIDs, binlogColIDs []int64
 	var row, binlogRow []types.Datum
-	if recordCtx, ok := sctx.Value(addRecordCtxKey).(*CommonAddRecordCtx); ok {
-		colIDs = recordCtx.colIDs[:0]
-		row = recordCtx.row[:0]
+	if recordCtx, ok := sctx.Value(AddRecordCtxKey).(*context2.CommonAddRecordCtx); ok {
+		colIDs = recordCtx.ColIDs[:0]
+		row = recordCtx.Row[:0]
 	} else {
 		colIDs = make([]int64, 0, len(r))
 		row = make([]types.Datum, 0, len(r))
@@ -838,7 +824,7 @@ func (t *TableCommon) AddRecord(sctx sessionctx.Context, r []types.Datum, opts .
 	memBuffer.Release(sh)
 
 	if shouldWriteBinlog(sctx, t.meta) {
-		// For insert, TiDB and Binlog can use same row and schema.
+		// For insert, TiDB and Binlog can use same Row and schema.
 		binlogRow = row
 		binlogColIDs = colIDs
 		err = t.addInsertBinlog(sctx, recordID, binlogRow, binlogColIDs)
@@ -919,7 +905,7 @@ func (t *TableCommon) addIndices(sctx sessionctx.Context, recordID kv.Handle, r 
 
 // RowWithCols is used to get the corresponding column datum values with the given handle.
 func RowWithCols(t table.Table, ctx sessionctx.Context, h kv.Handle, cols []*table.Column) ([]types.Datum, error) {
-	// Get raw row data from kv.
+	// Get raw Row data from kv.
 	key := tablecodec.EncodeRecordKey(t.RecordPrefix(), h)
 	txn, err := ctx.Txn(true)
 	if err != nil {
@@ -948,7 +934,7 @@ func containFullColInHandle(meta *model.TableInfo, col *table.Column) (containFu
 	return
 }
 
-// DecodeRawRowData decodes raw row data into a datum slice and a (columnID:columnValue) map.
+// DecodeRawRowData decodes raw Row data into a datum slice and a (columnID:columnValue) map.
 func DecodeRawRowData(ctx sessionctx.Context, meta *model.TableInfo, h kv.Handle, cols []*table.Column,
 	value []byte) ([]types.Datum, map[int64]types.Datum, error) {
 	v := make([]types.Datum, len(cols))
@@ -1019,11 +1005,11 @@ func DecodeRawRowData(ctx sessionctx.Context, meta *model.TableInfo, h kv.Handle
 }
 
 // GetChangingColVal gets the changing column value when executing "modify/change column" statement.
-// For statement like update-where, it will fetch the old row out and insert it into kv again.
+// For statement like update-where, it will fetch the old Row out and insert it into kv again.
 // Since update statement can see the writable columns, it is responsible for the casting relative column / get the fault value here.
-// old row : a-b-[nil]
-// new row : a-b-[a'/default]
-// Thus the writable new row is corresponding to Write-Only constraints.
+// old Row : a-b-[nil]
+// new Row : a-b-[a'/default]
+// Thus the writable new Row is corresponding to Write-Only constraints.
 func GetChangingColVal(ctx sessionctx.Context, cols []*table.Column, col *table.Column, rowMap map[int64]types.Datum, defaultVals []types.Datum) (_ types.Datum, isDefaultVal bool, err error) {
 	relativeCol := cols[col.ChangeStateInfo.DependencyColumnOffset]
 	idxColumnVal, ok := rowMap[relativeCol.ID]
@@ -1190,7 +1176,7 @@ func writeSequenceUpdateValueBinlog(ctx sessionctx.Context, db, sequence string,
 }
 
 func (t *TableCommon) removeRowData(ctx sessionctx.Context, h kv.Handle) error {
-	// Remove row data.
+	// Remove Row data.
 	txn, err := ctx.Txn(true)
 	if err != nil {
 		return err
@@ -1200,7 +1186,7 @@ func (t *TableCommon) removeRowData(ctx sessionctx.Context, h kv.Handle) error {
 	return txn.Delete(key)
 }
 
-// removeRowIndices removes all the indices of a row.
+// removeRowIndices removes all the indices of a Row.
 func (t *TableCommon) removeRowIndices(ctx sessionctx.Context, h kv.Handle, rec []types.Datum) error {
 	txn, err := ctx.Txn(true)
 	if err != nil {
@@ -1212,14 +1198,14 @@ func (t *TableCommon) removeRowIndices(ctx sessionctx.Context, h kv.Handle, rec 
 		}
 		vals, err := v.FetchValues(rec, nil)
 		if err != nil {
-			logutil.BgLogger().Info("remove row index failed", zap.Any("index", v.Meta()), zap.Uint64("txnStartTS", txn.StartTS()), zap.String("handle", h.String()), zap.Any("record", rec), zap.Error(err))
+			logutil.BgLogger().Info("remove Row index failed", zap.Any("index", v.Meta()), zap.Uint64("txnStartTS", txn.StartTS()), zap.String("handle", h.String()), zap.Any("record", rec), zap.Error(err))
 			return err
 		}
 		if err = v.Delete(ctx.GetSessionVars().StmtCtx, txn, vals, h); err != nil {
 			if v.Meta().State != model.StatePublic && kv.ErrNotExist.Equal(err) {
 				// If the index is not in public state, we may have not created the index,
 				// or already deleted the index, so skip ErrNotExist error.
-				logutil.BgLogger().Debug("row index not exists", zap.Any("index", v.Meta()), zap.Uint64("txnStartTS", txn.StartTS()), zap.String("handle", h.String()))
+				logutil.BgLogger().Debug("Row index not exists", zap.Any("index", v.Meta()), zap.Uint64("txnStartTS", txn.StartTS()), zap.String("handle", h.String()))
 				continue
 			}
 			return err
@@ -1285,9 +1271,9 @@ func IterRecords(t table.Table, ctx sessionctx.Context, cols []*table.Column,
 	}
 	defaultVals := make([]types.Datum, len(cols))
 	for it.Valid() && it.Key().HasPrefix(prefix) {
-		// first kv pair is row lock information.
+		// first kv pair is Row lock information.
 		// TODO: check valid lock
-		// get row handle
+		// get Row handle
 		handle, err := tablecodec.DecodeRowKey(it.Key())
 		if err != nil {
 			return err
@@ -1446,7 +1432,7 @@ func (t *TableCommon) Allocators(ctx sessionctx.Context) autoid.Allocators {
 		return t.allocs
 	}
 
-	// Replace the row id allocator with the one in session variables.
+	// Replace the Row id allocator with the one in session variables.
 	sessAlloc := ctx.GetSessionVars().IDAllocator
 	retAllocs := make([]autoid.Allocator, 0, len(t.allocs))
 	copy(retAllocs, t.allocs)
@@ -1488,7 +1474,7 @@ func (t *TableCommon) canSkip(col *table.Column, value *types.Datum) bool {
 	return CanSkip(t.Meta(), col, value)
 }
 
-// CanSkip is for these cases, we can skip the columns in encoded row:
+// CanSkip is for these cases, we can skip the columns in encoded Row:
 // 1. the column is included in primary key;
 // 2. the column's default value is null, and the value equals to that but has no origin default;
 // 3. the column is virtual generated.

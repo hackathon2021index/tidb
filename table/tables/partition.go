@@ -209,7 +209,7 @@ func parseSimpleExprWithNames(p *parser.Parser, ctx sessionctx.Context, exprStr 
 
 // ForListPruning is used for list partition pruning.
 type ForListPruning struct {
-	// LocateExpr uses to locate list partition by row.
+	// LocateExpr uses to locate list partition by Row.
 	LocateExpr expression.Expression
 	// PruneExpr uses to prune list partition in partition pruner.
 	PruneExpr expression.Expression
@@ -944,7 +944,7 @@ func (t *partitionedTable) locateRangeColumnPartition(ctx sessionctx.Context, pi
 			return true // Break the search.
 		}
 		if isNull {
-			// If the column value used to determine the partition is NULL, the row is inserted into the lowest partition.
+			// If the column value used to determine the partition is NULL, the Row is inserted into the lowest partition.
 			// See https://dev.mysql.com/doc/mysql-partitioning-excerpt/5.7/en/partitioning-handling-nulls.html
 			return true // Break the search.
 		}

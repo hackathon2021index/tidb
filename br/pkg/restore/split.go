@@ -16,11 +16,13 @@ import (
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/pingcap/log"
+
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/br/pkg/redact"
 	"github.com/pingcap/tidb/br/pkg/rtree"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+
 	"github.com/tikv/pd/pkg/codec"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
@@ -284,13 +286,13 @@ func (rs *RegionSplitter) splitAndScatterRegions(
 // ScatterRegionsWithBackoffer scatter the region with some backoffer.
 // This function is for testing the retry mechanism.
 // For a real cluster, directly use ScatterRegions would be fine.
-func (rs *RegionSplitter) ScatterRegionsWithBackoffer(ctx context.Context, newRegions []*RegionInfo, backoffer utils.Backoffer) {
+func (rs *RegionSplitter) ScatterRegionsWithBackoffer(ctx context.Context, newRegions []*RegionInfo, backoffer utildb.Backoffer) {
 	newRegionSet := make(map[uint64]*RegionInfo, len(newRegions))
 	for _, newRegion := range newRegions {
 		newRegionSet[newRegion.Region.Id] = newRegion
 	}
 
-	if err := utils.WithRetry(ctx, func() error {
+	if err := utildb.WithRetry(ctx, func() error {
 		log.Info("trying to scatter regions...", zap.Int("remain", len(newRegionSet)))
 		var errs error
 		for _, region := range newRegionSet {
@@ -378,7 +380,7 @@ func PaginateScanRegion(
 	}
 
 	var regions []*RegionInfo
-	err := utils.WithRetry(ctx, func() error {
+	err := utildb.WithRetry(ctx, func() error {
 		regions = []*RegionInfo{}
 		scanStartKey := startKey
 		for {
@@ -412,7 +414,7 @@ type scanRegionBackoffer struct {
 	attempt int
 }
 
-func newScanRegionBackoffer() utils.Backoffer {
+func newScanRegionBackoffer() utildb.Backoffer {
 	return &scanRegionBackoffer{
 		attempt: 3,
 	}

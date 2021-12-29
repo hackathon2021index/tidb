@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
 	tcontext "github.com/pingcap/tidb/dumpling/context"
 )
 
@@ -157,7 +157,7 @@ func (w *Writer) WriteTableData(meta TableMeta, ir TableDataIR, currentChunk int
 	tctx, conf, conn := w.tctx, w.conf, w.conn
 	retryTime := 0
 	var lastErr error
-	return utils.WithRetry(tctx, func() (err error) {
+	return utildb.WithRetry(tctx, func() (err error) {
 		defer func() {
 			lastErr = err
 			if err != nil {

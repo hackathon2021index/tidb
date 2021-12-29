@@ -16,14 +16,6 @@ import (
 	backuppb "github.com/pingcap/kvproto/pkg/brpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
-	berrors "github.com/pingcap/tidb/br/pkg/errors"
-	"github.com/pingcap/tidb/br/pkg/glue"
-	"github.com/pingcap/tidb/br/pkg/logutil"
-	"github.com/pingcap/tidb/br/pkg/pdutil"
-	"github.com/pingcap/tidb/br/pkg/utils"
-	"github.com/pingcap/tidb/br/pkg/version"
-	"github.com/pingcap/tidb/domain"
-	"github.com/pingcap/tidb/kv"
 	"github.com/tikv/client-go/v2/tikv"
 	"github.com/tikv/client-go/v2/txnkv/txnlock"
 	pd "github.com/tikv/pd/client"
@@ -34,6 +26,16 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
+
+	berrors "github.com/pingcap/tidb/br/pkg/errors"
+	"github.com/pingcap/tidb/br/pkg/glue"
+	"github.com/pingcap/tidb/br/pkg/logutil"
+	"github.com/pingcap/tidb/br/pkg/pdutil"
+	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+	"github.com/pingcap/tidb/br/pkg/version"
+	"github.com/pingcap/tidb/domain"
+	"github.com/pingcap/tidb/kv"
 )
 
 const (
@@ -173,7 +175,7 @@ func GetAllTiKVStoresWithRetry(ctx context.Context,
 	stores := make([]*metapb.Store, 0)
 	var err error
 
-	errRetry := utils.WithRetry(
+	errRetry := utildb.WithRetry(
 		ctx,
 		func() error {
 			stores, err = GetAllTiKVStores(ctx, pdClient, storeBehavior)

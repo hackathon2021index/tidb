@@ -8,7 +8,7 @@ import (
 
 	"github.com/pingcap/errors"
 
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
 	tcontext "github.com/pingcap/tidb/dumpling/context"
 )
 
@@ -128,7 +128,7 @@ func (c *ConsistencyLockDumpingTables) Setup(tctx *tcontext.Context) error {
 		}
 	}
 	blockList := make(map[string]map[string]interface{})
-	return utils.WithRetry(tctx, func() error {
+	return utildb.WithRetry(tctx, func() error {
 		lockTablesSQL := buildLockTablesSQL(c.conf.Tables, blockList)
 		_, err := c.conn.ExecContext(tctx, lockTablesSQL)
 		if err == nil {

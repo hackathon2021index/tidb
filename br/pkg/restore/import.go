@@ -18,11 +18,14 @@ import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
+
 	"github.com/pingcap/tidb/br/pkg/conn"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/br/pkg/summary"
 	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+
 	pd "github.com/tikv/pd/client"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
@@ -292,7 +295,7 @@ func (importer *FileImporter) Import(
 		logutil.Key("startKey", startKey),
 		logutil.Key("endKey", endKey))
 
-	err := utils.WithRetry(ctx, func() error {
+	err := utildb.WithRetry(ctx, func() error {
 		tctx, cancel := context.WithTimeout(ctx, importScanRegionTime)
 		defer cancel()
 		// Scan regions covered by the file range
@@ -310,7 +313,7 @@ func (importer *FileImporter) Import(
 			// Try to download file.
 			downloadMetas := make([]*import_sstpb.SSTMeta, 0, len(files))
 			remainFiles := files
-			errDownload := utils.WithRetry(ctx, func() error {
+			errDownload := utildb.WithRetry(ctx, func() error {
 				var e error
 				for i, f := range remainFiles {
 					var downloadMeta *import_sstpb.SSTMeta

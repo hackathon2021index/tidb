@@ -14,15 +14,16 @@ import (
 	"github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
-	"github.com/pingcap/tidb/br/pkg/restore"
-	"github.com/pingcap/tidb/br/pkg/rtree"
-	"github.com/pingcap/tidb/br/pkg/utils"
-	"github.com/pingcap/tidb/util/codec"
 	"github.com/stretchr/testify/require"
 	"github.com/tikv/pd/server/core"
 	"github.com/tikv/pd/server/schedule/placement"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/pingcap/tidb/br/pkg/restore"
+	"github.com/pingcap/tidb/br/pkg/rtree"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+	"github.com/pingcap/tidb/util/codec"
 )
 
 type TestClient struct {
@@ -213,7 +214,7 @@ type assertRetryLessThanBackoffer struct {
 	t       *testing.T
 }
 
-func assertRetryLessThan(t *testing.T, times int) utils.Backoffer {
+func assertRetryLessThan(t *testing.T, times int) utildb.Backoffer {
 	return &assertRetryLessThanBackoffer{
 		max:     times,
 		already: 0,

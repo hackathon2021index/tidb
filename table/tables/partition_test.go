@@ -480,7 +480,7 @@ func TestCreatePartitionTableNotSupport(t *testing.T) {
 	require.True(t, ddl.ErrPartitionFunctionIsNotAllowed.Equal(err))
 	_, err = tk.Exec(`create table t7 (a int) partition by range (1 + (select * from t)) (partition p1 values less than (1));`)
 	require.True(t, ddl.ErrPartitionFunctionIsNotAllowed.Equal(err))
-	_, err = tk.Exec(`create table t7 (a int) partition by range (a + row(1, 2, 3)) (partition p1 values less than (1));`)
+	_, err = tk.Exec(`create table t7 (a int) partition by range (a + Row(1, 2, 3)) (partition p1 values less than (1));`)
 	require.True(t, ddl.ErrPartitionFunctionIsNotAllowed.Equal(err))
 	_, err = tk.Exec(`create table t7 (a int) partition by range (-(select * from t)) (partition p1 values less than (1));`)
 	require.True(t, ddl.ErrPartitionFunctionIsNotAllowed.Equal(err))
@@ -619,10 +619,10 @@ func TestIssue24746(t *testing.T) {
 	defer tk.MustExec("drop table t_24746")
 	err := tk.ExecToErr("insert into t_24746 partition (p1) values(4,'ERROR, not matching partition p1',4)")
 	require.True(t, table.ErrRowDoesNotMatchGivenPartitionSet.Equal(err))
-	tk.MustExec("insert into t_24746 partition (p0) values(4,'OK, first row in correct partition',4)")
+	tk.MustExec("insert into t_24746 partition (p0) values(4,'OK, first Row in correct partition',4)")
 	err = tk.ExecToErr("insert into t_24746 partition (p0) values(4,'DUPLICATE, in p0',4) on duplicate key update a = a + 1, b = 'ERROR, not allowed to write to p1'")
 	require.True(t, table.ErrRowDoesNotMatchGivenPartitionSet.Equal(err))
-	// Actual bug, before the fix this was updating the row in p0 (deleting it in p0 and inserting in p1):
+	// Actual bug, before the fix this was updating the Row in p0 (deleting it in p0 and inserting in p1):
 	err = tk.ExecToErr("insert into t_24746 partition (p1) values(4,'ERROR, not allowed to read from partition p0',4) on duplicate key update a = a + 1, b = 'ERROR, not allowed to read from p0!'")
 	require.True(t, table.ErrRowDoesNotMatchGivenPartitionSet.Equal(err))
 }

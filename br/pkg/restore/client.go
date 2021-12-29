@@ -21,6 +21,16 @@ import (
 	"github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
+	"github.com/tikv/client-go/v2/oracle"
+	pd "github.com/tikv/pd/client"
+	"github.com/tikv/pd/server/schedule/placement"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+
 	"github.com/pingcap/tidb/br/pkg/checksum"
 	"github.com/pingcap/tidb/br/pkg/conn"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
@@ -32,21 +42,13 @@ import (
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/br/pkg/summary"
 	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/statistics/handle"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/util/codec"
-	"github.com/tikv/client-go/v2/oracle"
-	pd "github.com/tikv/pd/client"
-	"github.com/tikv/pd/server/schedule/placement"
-	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/backoff"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/keepalive"
 )
 
 // defaultChecksumConcurrency is the default number of the concurrent
@@ -302,7 +304,7 @@ func (rc *Client) ResetTS(ctx context.Context, pdAddrs []string) error {
 	restoreTS := rc.backupMeta.GetEndVersion()
 	log.Info("reset pd timestamp", zap.Uint64("ts", restoreTS))
 	i := 0
-	return utils.WithRetry(ctx, func() error {
+	return utildb.WithRetry(ctx, func() error {
 		idx := i % len(pdAddrs)
 		i++
 		return pdutil.ResetTS(ctx, pdAddrs[idx], restoreTS, rc.tlsConf)
@@ -313,7 +315,7 @@ func (rc *Client) ResetTS(ctx context.Context, pdAddrs []string) error {
 func (rc *Client) GetPlacementRules(ctx context.Context, pdAddrs []string) ([]placement.Rule, error) {
 	var placementRules []placement.Rule
 	i := 0
-	errRetry := utils.WithRetry(ctx, func() error {
+	errRetry := utildb.WithRetry(ctx, func() error {
 		var err error
 		idx := i % len(pdAddrs)
 		i++

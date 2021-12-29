@@ -5,7 +5,12 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"sync"
+	"sync/atomic"
+
 	"github.com/pingcap/errors"
+	"github.com/twmb/murmur3"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
@@ -13,9 +18,6 @@ import (
 	tidbcfg "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/util/logutil"
-	"github.com/twmb/murmur3"
-	"sync"
-	"sync/atomic"
 )
 
 func LogDebug(format string, a ...interface{}) {
@@ -193,7 +195,7 @@ func RunIndexOpRoutine(ctx context.Context, engine *backend.OpenedEngine, kvs <-
 
 func FinishIndexOp(ctx context.Context, startTs uint64) error {
 	LogDebug("FinishIndexOp %d", startTs)
-	ei,err := ec.getEngineInfo(startTs)
+	ei, err := ec.getEngineInfo(startTs)
 	if err != nil {
 		return err
 	}

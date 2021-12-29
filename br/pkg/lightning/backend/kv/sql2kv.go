@@ -24,6 +24,9 @@ import (
 	"sort"
 
 	"github.com/pingcap/errors"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/metric"
@@ -37,14 +40,10 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	tablecontext "github.com/pingcap/tidb/table/tables/context"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-
-	// Import tidb/planner/core to initialize expression.RewriteAstExpr
-	_ "github.com/pingcap/tidb/planner/core"
 )
 
 var ExtraHandleColumnInfo = model.NewExtraHandleColInfo()
@@ -71,7 +70,7 @@ func NewTableKVEncoder(tbl table.Table, options *SessionOptions) (Encoder, error
 	cols := tbl.Cols()
 	se := newSession(options)
 	// Set CommonAddRecordCtx to session to reuse the slices and BufStore in AddRecord
-	recordCtx := tables.NewCommonAddRecordCtx(len(cols))
+	recordCtx := tablecontext.NewCommonAddRecordCtx(len(cols))
 	tables.SetAddRecordCtx(se, recordCtx)
 
 	autoIDFn := func(id int64) int64 { return id }

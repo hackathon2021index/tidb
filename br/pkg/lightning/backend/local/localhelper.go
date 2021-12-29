@@ -30,16 +30,17 @@ import (
 	sst "github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
+	"go.uber.org/multierr"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	split "github.com/pingcap/tidb/br/pkg/restore"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utilmath"
 	"github.com/pingcap/tidb/util/codec"
-	"go.uber.org/multierr"
-	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -185,7 +186,7 @@ func (local *local) SplitAndScatterRegionByRanges(
 
 		var syncLock sync.Mutex
 		// TODO, make this size configurable
-		size := utils.MinInt(len(splitKeyMap), runtime.GOMAXPROCS(0))
+		size := utilmath.MinInt(len(splitKeyMap), runtime.GOMAXPROCS(0))
 		ch := make(chan *splitInfo, size)
 		eg, splitCtx := errgroup.WithContext(ctx)
 

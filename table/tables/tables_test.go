@@ -22,6 +22,10 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+	binlog "github.com/pingcap/tipb/go-binlog"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta/autoid"
@@ -31,14 +35,12 @@ import (
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	context2 "github.com/pingcap/tidb/table/tables/context"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/testkit"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/testutil"
-	binlog "github.com/pingcap/tipb/go-binlog"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 func firstKey(t table.Table) kv.Key {
@@ -533,7 +535,7 @@ func TestHiddenColumn(t *testing.T) {
 
 	// Can't use hidden columns in `INSERT` statement
 	// 1. insert into ... values ...
-	tk.MustGetErrMsg("insert into t values (1, 2, 3, 4, 5, 6);", "[planner:1136]Column count doesn't match value count at row 1")
+	tk.MustGetErrMsg("insert into t values (1, 2, 3, 4, 5, 6);", "[planner:1136]Column count doesn't match value count at Row 1")
 	tk.MustGetErrMsg("insert into t(b) values (2)", "[planner:1054]Unknown column 'b' in 'field list'")
 	tk.MustGetErrMsg("insert into t(b, c) values (2, 3);", "[planner:1054]Unknown column 'b' in 'field list'")
 	tk.MustGetErrMsg("insert into t(a, d) values (1, 4);", "[planner:1054]Unknown column 'd' in 'field list'")
@@ -633,7 +635,7 @@ func TestAddRecordWithCtx(t *testing.T) {
 	require.Nil(t, tk.Session().NewTxn(context.Background()))
 	_, err = tk.Session().Txn(true)
 	require.NoError(t, err)
-	recordCtx := tables.NewCommonAddRecordCtx(len(tb.Cols()))
+	recordCtx := context2.NewCommonAddRecordCtx(len(tb.Cols()))
 	tables.SetAddRecordCtx(tk.Session(), recordCtx)
 	defer tables.ClearAddRecordCtx(tk.Session())
 

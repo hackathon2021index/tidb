@@ -22,6 +22,7 @@ import (
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/context"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 )
@@ -115,7 +116,7 @@ func NewTableKVDecoder(tbl table.Table, tableName string, options *SessionOption
 	se := newSession(options)
 	cols := tbl.Cols()
 	// Set CommonAddRecordCtx to session to reuse the slices and BufStore in AddRecord
-	recordCtx := tables.NewCommonAddRecordCtx(len(cols))
+	recordCtx := context.NewCommonAddRecordCtx(len(cols))
 	tables.SetAddRecordCtx(se, recordCtx)
 
 	genCols, err := collectGeneratedColumns(se, tbl.Meta(), cols)

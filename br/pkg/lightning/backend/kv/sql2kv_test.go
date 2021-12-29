@@ -19,12 +19,14 @@ import (
 	"fmt"
 
 	. "github.com/pingcap/check"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/verification"
 	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/parser/model"
@@ -32,11 +34,8 @@ import (
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
-	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/mock"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func (s *kvSuite) TestMarshal(c *C) {
@@ -306,119 +305,6 @@ func (s *kvSuite) TestEncodeTimestamp(c *C) {
 			Offset: 1234,
 		},
 	}})
-}
-
-func (s *kvSuite) TestEncodeDoubleAutoIncrement(c *C) {
-	tblInfo := mockTableInfo(c, "create table t (id double not null auto_increment, unique key `u_id` (`id`));")
-	tbl, err := tables.TableFromMeta(NewPanickingAllocators(0), tblInfo)
-	c.Assert(err, IsNil)
-
-	logger := log.Logger{Logger: zap.NewNop()}
-
-	encoder, err := NewTableKVEncoder(tbl, &SessionOptions{
-		SQLMode: mysql.ModeStrictAllTables,
-		SysVars: map[string]string{
-			"tidb_row_format_version": "2",
-		},
-	})
-	c.Assert(err, IsNil)
-	pairs, err := encoder.Encode(logger, []types.Datum{
-		types.NewStringDatum("1"),
-	}, 70, []int{0, -1}, "1.csv", 1234)
-	c.Assert(err, IsNil)
-	c.Assert(pairs, DeepEquals, &KvPairs{pairs: []common.KvPair{
-		{
-			Key:    []uint8{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x5f, 0x72, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x46},
-			Val:    []uint8{0x80, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x8, 0x0, 0xbf, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
-			RowID:  70,
-			Offset: 1234,
-		},
-		{
-			Key:    []uint8{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x5f, 0x69, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x5, 0xbf, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
-			Val:    []uint8{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x46},
-			RowID:  70,
-			Offset: 1234,
-		},
-	}})
-	c.Assert(tbl.Allocators(encoder.(*tableKVEncoder).se).Get(autoid.AutoIncrementType).Base(), Equals, int64(70))
-}
-
-func mockTableInfo(c *C, createSQL string) *model.TableInfo {
-	parser := parser.New()
-	node, err := parser.ParseOneStmt(createSQL, "", "")
-	c.Assert(err, IsNil)
-	sctx := mock.NewContext()
-	info, err := ddl.MockTableInfo(sctx, node.(*ast.CreateTableStmt), 1)
-	c.Assert(err, IsNil)
-	info.State = model.StatePublic
-	return info
-}
-
-func (s *kvSuite) TestDefaultAutoRandoms(c *C) {
-	tblInfo := mockTableInfo(c, "create table t (id bigint unsigned NOT NULL auto_random primary key clustered, a varchar(100));")
-	// seems parser can't parse auto_random properly.
-	tblInfo.AutoRandomBits = 5
-	tbl, err := tables.TableFromMeta(NewPanickingAllocators(0), tblInfo)
-	c.Assert(err, IsNil)
-	encoder, err := NewTableKVEncoder(tbl, &SessionOptions{
-		SQLMode:        mysql.ModeStrictAllTables,
-		Timestamp:      1234567893,
-		SysVars:        map[string]string{"tidb_row_format_version": "2"},
-		AutoRandomSeed: 456,
-	})
-	c.Assert(err, IsNil)
-	logger := log.Logger{Logger: zap.NewNop()}
-	pairs, err := encoder.Encode(logger, []types.Datum{types.NewStringDatum("")}, 70, []int{-1, 0}, "1.csv", 1234)
-	c.Assert(err, IsNil)
-	c.Assert(pairs, DeepEquals, &KvPairs{pairs: []common.KvPair{
-		{
-			Key:    []uint8{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x5f, 0x72, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x46},
-			Val:    []uint8{0x80, 0x0, 0x1, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0},
-			RowID:  70,
-			Offset: 1234,
-		},
-	}})
-	c.Assert(tbl.Allocators(encoder.(*tableKVEncoder).se).Get(autoid.AutoRandomType).Base(), Equals, int64(70))
-
-	pairs, err = encoder.Encode(logger, []types.Datum{types.NewStringDatum("")}, 71, []int{-1, 0}, "1.csv", 1234)
-	c.Assert(err, IsNil)
-	c.Assert(pairs, DeepEquals, &KvPairs{pairs: []common.KvPair{
-		{
-			Key:    []uint8{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x5f, 0x72, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x47},
-			Val:    []uint8{0x80, 0x0, 0x1, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0},
-			RowID:  71,
-			Offset: 1234,
-		},
-	}})
-	c.Assert(tbl.Allocators(encoder.(*tableKVEncoder).se).Get(autoid.AutoRandomType).Base(), Equals, int64(71))
-}
-
-func (s *kvSuite) TestShardRowId(c *C) {
-	tblInfo := mockTableInfo(c, "create table t (s varchar(16)) shard_row_id_bits = 3;")
-	tbl, err := tables.TableFromMeta(NewPanickingAllocators(0), tblInfo)
-	c.Assert(err, IsNil)
-	encoder, err := NewTableKVEncoder(tbl, &SessionOptions{
-		SQLMode:        mysql.ModeStrictAllTables,
-		Timestamp:      1234567893,
-		SysVars:        map[string]string{"tidb_row_format_version": "2"},
-		AutoRandomSeed: 456,
-	})
-	c.Assert(err, IsNil)
-	logger := log.Logger{Logger: zap.NewNop()}
-	keyMap := make(map[int64]struct{}, 16)
-	for i := int64(1); i <= 32; i++ {
-		pairs, err := encoder.Encode(logger, []types.Datum{types.NewStringDatum(fmt.Sprintf("%d", i))}, i, []int{0, -1}, "1.csv", i*32)
-		c.Assert(err, IsNil)
-		kvs := pairs.(*KvPairs)
-		c.Assert(len(kvs.pairs), Equals, 1)
-		_, h, err := tablecodec.DecodeRecordKey(kvs.pairs[0].Key)
-		c.Assert(err, IsNil)
-		rowID := h.IntValue()
-		c.Assert(rowID&((1<<60)-1), Equals, i)
-		keyMap[rowID>>60] = struct{}{}
-	}
-	c.Assert(len(keyMap), Equals, 8)
-	c.Assert(tbl.Allocators(encoder.(*tableKVEncoder).se).Get(autoid.RowIDAllocType).Base(), Equals, int64(32))
 }
 
 func (s *kvSuite) TestSplitIntoChunks(c *C) {
