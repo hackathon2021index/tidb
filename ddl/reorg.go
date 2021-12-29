@@ -24,6 +24,9 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tipb/go-tipb"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/distsql"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta"
@@ -36,6 +39,7 @@ import (
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
@@ -44,8 +48,6 @@ import (
 	"github.com/pingcap/tidb/util/mock"
 	"github.com/pingcap/tidb/util/ranger"
 	"github.com/pingcap/tidb/util/sqlexec"
-	"github.com/pingcap/tipb/go-tipb"
-	"go.uber.org/zap"
 )
 
 // reorgCtx is for reorganization.
@@ -487,7 +489,7 @@ func (dc *ddlCtx) GetTableMaxHandle(startTS uint64, tbl table.PhysicalTable) (ma
 			}
 		}
 	case tblInfo.IsCommonHandle:
-		pkIdx = tables.FindPrimaryIndex(tblInfo)
+		pkIdx = util.FindPrimaryIndex(tblInfo)
 		cols := tblInfo.Cols()
 		for _, idxCol := range pkIdx.Columns {
 			handleCols = append(handleCols, cols[idxCol.Offset])

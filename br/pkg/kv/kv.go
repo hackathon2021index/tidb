@@ -33,7 +33,6 @@ import (
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/table"
-	"github.com/pingcap/tidb/table/tables"
 	context2 "github.com/pingcap/tidb/table/tables/context"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
@@ -233,7 +232,7 @@ func NewTableKVEncoder(tbl table.Table, options *SessionOptions) Encoder {
 	se := newSession(options)
 	// Set CommonAddRecordCtx to session to reuse the slices and BufStore in AddRecord
 	recordCtx := context2.NewCommonAddRecordCtx(len(tbl.Cols()))
-	tables.SetAddRecordCtx(se, recordCtx)
+	context2.SetAddRecordCtx(se, recordCtx)
 	return &tableKVEncoder{
 		tbl: tbl,
 		se:  se,

@@ -25,6 +25,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
@@ -104,10 +105,10 @@ func (rd *RowDecoder) DecodeAndEvalRowWithMap(ctx sessionctx.Context, handle kv.
 			continue
 		}
 		if dCol.Col.ChangeStateInfo != nil {
-			val, _, err = tables.GetChangingColVal(ctx, rd.cols, dCol.Col, row, rd.defaultVals)
+			val, _, err = util.GetChangingColVal(ctx, rd.cols, dCol.Col, row, rd.defaultVals)
 		} else {
 			// Get the default value of the column in the generated column expression.
-			val, err = tables.GetColDefaultValue(ctx, dCol.Col, rd.defaultVals)
+			val, err = util.GetColDefaultValue(ctx, dCol.Col, rd.defaultVals)
 		}
 		if err != nil {
 			return nil, err
@@ -161,7 +162,7 @@ func (rd *RowDecoder) DecodeTheExistedColumnMap(ctx sessionctx.Context, handle k
 			continue
 		}
 		// Get the default value of the column in the generated column expression.
-		val, err = tables.GetColDefaultValue(ctx, dCol.Col, rd.defaultVals)
+		val, err = util.GetColDefaultValue(ctx, dCol.Col, rd.defaultVals)
 		if err != nil {
 			return nil, err
 		}

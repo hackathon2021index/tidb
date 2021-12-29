@@ -20,6 +20,8 @@ import (
 	"unsafe"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tipb/go-tipb"
+
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/expression/aggregation"
 	"github.com/pingcap/tidb/kv"
@@ -31,11 +33,10 @@ import (
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/table"
-	"github.com/pingcap/tidb/table/tables"
+	util2 "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/ranger"
 	"github.com/pingcap/tidb/util/stringutil"
-	"github.com/pingcap/tipb/go-tipb"
 )
 
 var (
@@ -531,7 +532,7 @@ func (ts *PhysicalTableScan) IsPartition() (bool, int64) {
 func (ts *PhysicalTableScan) ResolveCorrelatedColumns() ([]*ranger.Range, error) {
 	access := ts.AccessCondition
 	if ts.Table.IsCommonHandle {
-		pkIdx := tables.FindPrimaryIndex(ts.Table)
+		pkIdx := util2.FindPrimaryIndex(ts.Table)
 		idxCols, idxColLens := expression.IndexInfo2PrefixCols(ts.Columns, ts.Schema().Columns, pkIdx)
 		for _, cond := range access {
 			newCond, err := expression.SubstituteCorCol2Constant(cond)

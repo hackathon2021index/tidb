@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/expression/aggregation"
@@ -36,6 +37,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/telemetry"
 	"github.com/pingcap/tidb/types"
@@ -2029,7 +2031,7 @@ func decodeRecordKey(key []byte, tableID int64, tbl table.Table, loc *time.Locat
 	}
 	if tbl != nil {
 		tblInfo := tbl.Meta()
-		idxInfo := tables.FindPrimaryIndex(tblInfo)
+		idxInfo := util.FindPrimaryIndex(tblInfo)
 		if idxInfo == nil {
 			return "", errors.Trace(errors.Errorf("primary key not found when decoding record key: %X", key))
 		}
@@ -2103,7 +2105,7 @@ func decodeIndexKey(key []byte, tableID int64, tbl table.Table, loc *time.Locati
 		if targetIndex == nil {
 			return "", errors.Trace(errors.Errorf("index not found when decoding index key: %X", key))
 		}
-		colInfos := tables.BuildRowcodecColInfoForIndexColumns(targetIndex, tblInfo)
+		colInfos := util.BuildRowcodecColInfoForIndexColumns(targetIndex, tblInfo)
 		tps := tables.BuildFieldTypesForIndexColumns(targetIndex, tblInfo)
 		values, err := tablecodec.DecodeIndexKV(key, []byte{0}, len(colInfos), tablecodec.HandleNotNeeded, colInfos)
 		if err != nil {

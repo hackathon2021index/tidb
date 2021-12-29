@@ -14,7 +14,10 @@
 
 package context
 
-import "github.com/pingcap/tidb/types"
+import (
+	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/types"
+)
 
 // CommonAddRecordCtx is used in `AddRecord` to avoid memory malloc for some temp slices.
 // This is useful in lightning parse Row data to key-values pairs. This can gain upto 5%  performance
@@ -30,4 +33,20 @@ func NewCommonAddRecordCtx(size int) *CommonAddRecordCtx {
 		ColIDs: make([]int64, 0, size),
 		Row:    make([]types.Datum, 0, size),
 	}
+}
+
+// commonAddRecordKey is used as key in `sessionctx.Context.Value(key)`
+type commonAddRecordKey struct{}
+
+// String implement `stringer.String` for CommonAddRecordKey
+func (c commonAddRecordKey) String() string {
+	return "_common_add_record_context_key"
+}
+
+// AddRecordCtxKey is key in `sessionctx.Context` for CommonAddRecordCtx
+var AddRecordCtxKey = commonAddRecordKey{}
+
+// SetAddRecordCtx set a CommonAddRecordCtx to session context
+func SetAddRecordCtx(ctx sessionctx.Context, r *CommonAddRecordCtx) {
+	ctx.SetValue(AddRecordCtxKey, r)
 }

@@ -24,16 +24,17 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
+	tikverr "github.com/tikv/client-go/v2/error"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	derr "github.com/pingcap/tidb/store/driver/error"
-	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/logutil"
-	tikverr "github.com/tikv/client-go/v2/error"
-	"go.uber.org/zap"
 )
 
 func genKeyExistsError(name string, value string, err error) error {
@@ -64,7 +65,7 @@ func extractKeyExistsErrFromHandle(key kv.Key, value []byte, tblInfo *model.Tabl
 		return genKeyExistsError(name, handle.String(), errors.New("missing value"))
 	}
 
-	idxInfo := tables.FindPrimaryIndex(tblInfo)
+	idxInfo := util.FindPrimaryIndex(tblInfo)
 	if idxInfo == nil {
 		return genKeyExistsError(name, handle.String(), errors.New("cannot find index info"))
 	}
@@ -119,7 +120,7 @@ func extractKeyExistsErrFromIndex(key kv.Key, value []byte, tblInfo *model.Table
 		return genKeyExistsError(name, key.String(), errors.New("missing value"))
 	}
 
-	colInfo := tables.BuildRowcodecColInfoForIndexColumns(idxInfo, tblInfo)
+	colInfo := util.BuildRowcodecColInfoForIndexColumns(idxInfo, tblInfo)
 	values, err := tablecodec.DecodeIndexKV(key, value, len(idxInfo.Columns), tablecodec.HandleNotNeeded, colInfo)
 	if err != nil {
 		return genKeyExistsError(name, key.String(), err)
