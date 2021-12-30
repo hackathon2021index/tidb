@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/pingcap/tidb/br/pkg/restore"
+	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/br/pkg/rtree"
 	"github.com/pingcap/tidb/br/pkg/utils/utildb"
 	"github.com/pingcap/tidb/util/codec"
@@ -29,17 +30,17 @@ import (
 type TestClient struct {
 	mu              sync.RWMutex
 	stores          map[uint64]*metapb.Store
-	regions         map[uint64]*restore.RegionInfo
+	regions         map[uint64]*split.RegionInfo
 	regionsInfo     *core.RegionsInfo // For now it's only used in ScanRegions
 	nextRegionID    uint64
-	injectInScatter func(*restore.RegionInfo) error
+	injectInScatter func(*split.RegionInfo) error
 
 	scattered map[uint64]bool
 }
 
 func NewTestClient(
 	stores map[uint64]*metapb.Store,
-	regions map[uint64]*restore.RegionInfo,
+	regions map[uint64]*split.RegionInfo,
 	nextRegionID uint64,
 ) *TestClient {
 	regionsInfo := core.NewRegionsInfo()
@@ -52,11 +53,11 @@ func NewTestClient(
 		regionsInfo:     regionsInfo,
 		nextRegionID:    nextRegionID,
 		scattered:       map[uint64]bool{},
-		injectInScatter: func(*restore.RegionInfo) error { return nil },
+		injectInScatter: func(*split.RegionInfo) error { return nil },
 	}
 }
 
-func (c *TestClient) GetAllRegions() map[uint64]*restore.RegionInfo {
+func (c *TestClient) GetAllRegions() map[uint64]*split.RegionInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.regions
@@ -72,7 +73,7 @@ func (c *TestClient) GetStore(ctx context.Context, storeID uint64) (*metapb.Stor
 	return store, nil
 }
 
-func (c *TestClient) GetRegion(ctx context.Context, key []byte) (*restore.RegionInfo, error) {
+func (c *TestClient) GetRegion(ctx context.Context, key []byte) (*split.RegionInfo, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, region := range c.regions {
@@ -84,7 +85,7 @@ func (c *TestClient) GetRegion(ctx context.Context, key []byte) (*restore.Region
 	return nil, errors.Errorf("region not found: key=%s", string(key))
 }
 
-func (c *TestClient) GetRegionByID(ctx context.Context, regionID uint64) (*restore.RegionInfo, error) {
+func (c *TestClient) GetRegionByID(ctx context.Context, regionID uint64) (*split.RegionInfo, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	region, ok := c.regions[regionID]
@@ -96,12 +97,12 @@ func (c *TestClient) GetRegionByID(ctx context.Context, regionID uint64) (*resto
 
 func (c *TestClient) SplitRegion(
 	ctx context.Context,
-	regionInfo *restore.RegionInfo,
+	regionInfo *split.RegionInfo,
 	key []byte,
-) (*restore.RegionInfo, error) {
+) (*split.RegionInfo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var target *restore.RegionInfo
+	var target *split.RegionInfo
 	splitKey := codec.EncodeBytes([]byte{}, key)
 	for _, region := range c.regions {
 		if bytes.Compare(splitKey, region.Region.StartKey) >= 0 &&
@@ -112,7 +113,7 @@ func (c *TestClient) SplitRegion(
 	if target == nil {
 		return nil, errors.Errorf("region not found: key=%s", string(key))
 	}
-	newRegion := &restore.RegionInfo{
+	newRegion := &split.RegionInfo{
 		Region: &metapb.Region{
 			Peers:    target.Region.Peers,
 			Id:       c.nextRegionID,
@@ -128,14 +129,14 @@ func (c *TestClient) SplitRegion(
 }
 
 func (c *TestClient) BatchSplitRegionsWithOrigin(
-	ctx context.Context, regionInfo *restore.RegionInfo, keys [][]byte,
-) (*restore.RegionInfo, []*restore.RegionInfo, error) {
+	ctx context.Context, regionInfo *split.RegionInfo, keys [][]byte,
+) (*split.RegionInfo, []*split.RegionInfo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	newRegions := make([]*restore.RegionInfo, 0)
-	var region *restore.RegionInfo
+	newRegions := make([]*split.RegionInfo, 0)
+	var region *split.RegionInfo
 	for _, key := range keys {
-		var target *restore.RegionInfo
+		var target *split.RegionInfo
 		splitKey := codec.EncodeBytes([]byte{}, key)
 		for _, region := range c.regions {
 			if region.ContainsInterior(splitKey) {
@@ -145,7 +146,7 @@ func (c *TestClient) BatchSplitRegionsWithOrigin(
 		if target == nil {
 			continue
 		}
-		newRegion := &restore.RegionInfo{
+		newRegion := &split.RegionInfo{
 			Region: &metapb.Region{
 				Peers:    target.Region.Peers,
 				Id:       c.nextRegionID,
@@ -164,13 +165,13 @@ func (c *TestClient) BatchSplitRegionsWithOrigin(
 }
 
 func (c *TestClient) BatchSplitRegions(
-	ctx context.Context, regionInfo *restore.RegionInfo, keys [][]byte,
-) ([]*restore.RegionInfo, error) {
+	ctx context.Context, regionInfo *split.RegionInfo, keys [][]byte,
+) ([]*split.RegionInfo, error) {
 	_, newRegions, err := c.BatchSplitRegionsWithOrigin(ctx, regionInfo, keys)
 	return newRegions, err
 }
 
-func (c *TestClient) ScatterRegion(ctx context.Context, regionInfo *restore.RegionInfo) error {
+func (c *TestClient) ScatterRegion(ctx context.Context, regionInfo *split.RegionInfo) error {
 	return c.injectInScatter(regionInfo)
 }
 
@@ -180,11 +181,11 @@ func (c *TestClient) GetOperator(ctx context.Context, regionID uint64) (*pdpb.Ge
 	}, nil
 }
 
-func (c *TestClient) ScanRegions(ctx context.Context, key, endKey []byte, limit int) ([]*restore.RegionInfo, error) {
+func (c *TestClient) ScanRegions(ctx context.Context, key, endKey []byte, limit int) ([]*split.RegionInfo, error) {
 	infos := c.regionsInfo.ScanRange(key, endKey, limit)
-	regions := make([]*restore.RegionInfo, 0, len(infos))
+	regions := make([]*split.RegionInfo, 0, len(infos))
 	for _, info := range infos {
-		regions = append(regions, &restore.RegionInfo{
+		regions = append(regions, &split.RegionInfo{
 			Region: info.GetMeta(),
 			Leader: info.GetLeader(),
 		})
@@ -256,12 +257,12 @@ func TestScatterFinishInTime(t *testing.T) {
 		t.Fail()
 	}
 
-	regionInfos := make([]*restore.RegionInfo, 0, len(regions))
+	regionInfos := make([]*split.RegionInfo, 0, len(regions))
 	for _, info := range regions {
 		regionInfos = append(regionInfos, info)
 	}
 	failed := map[uint64]int{}
-	client.injectInScatter = func(r *restore.RegionInfo) error {
+	client.injectInScatter = func(r *split.RegionInfo) error {
 		failed[r.Region.Id]++
 		if failed[r.Region.Id] > 7 {
 			return nil
@@ -301,13 +302,13 @@ func TestSplitAndScatter(t *testing.T) {
 		t.Log("get wrong result")
 		t.Fail()
 	}
-	regionInfos := make([]*restore.RegionInfo, 0, len(regions))
+	regionInfos := make([]*split.RegionInfo, 0, len(regions))
 	for _, info := range regions {
 		regionInfos = append(regionInfos, info)
 	}
 	scattered := map[uint64]bool{}
 	const alwaysFailedRegionID = 1
-	client.injectInScatter = func(regionInfo *restore.RegionInfo) error {
+	client.injectInScatter = func(regionInfo *split.RegionInfo) error {
 		if _, ok := scattered[regionInfo.Region.Id]; !ok || regionInfo.Region.Id == alwaysFailedRegionID {
 			scattered[regionInfo.Region.Id] = false
 			return status.Errorf(codes.Unknown, "region %d is not fully replicated", regionInfo.Region.Id)
@@ -334,7 +335,7 @@ func initTestClient() *TestClient {
 		StoreId: 1,
 	}
 	keys := [6]string{"", "aay", "bba", "bbh", "cca", ""}
-	regions := make(map[uint64]*restore.RegionInfo)
+	regions := make(map[uint64]*split.RegionInfo)
 	for i := uint64(1); i < 6; i++ {
 		startKey := []byte(keys[i-1])
 		if len(startKey) != 0 {
@@ -344,7 +345,7 @@ func initTestClient() *TestClient {
 		if len(endKey) != 0 {
 			endKey = codec.EncodeBytes([]byte{}, endKey)
 		}
-		regions[i] = &restore.RegionInfo{
+		regions[i] = &split.RegionInfo{
 			Region: &metapb.Region{
 				Id:       i,
 				Peers:    peers,
@@ -400,7 +401,7 @@ func initRewriteRules() *restore.RewriteRules {
 // expected regions after split:
 //   [, aay), [aay, bba), [bba, bbf), [bbf, bbh), [bbh, bbj),
 //   [bbj, cca), [cca, xxe), [xxe, xxz), [xxz, )
-func validateRegions(regions map[uint64]*restore.RegionInfo) bool {
+func validateRegions(regions map[uint64]*split.RegionInfo) bool {
 	keys := [...]string{"", "aay", "bba", "bbf", "bbh", "bbj", "cca", "xxe", "xxz", ""}
 	if len(regions) != len(keys)-1 {
 		return false
@@ -427,7 +428,7 @@ FindRegion:
 }
 
 func (s *testRangeSuite) TestNeedSplit(c *C) {
-	regions := []*restore.RegionInfo{
+	regions := []*split.RegionInfo{
 		{
 			Region: &metapb.Region{
 				StartKey: codec.EncodeBytes([]byte{}, []byte("b")),

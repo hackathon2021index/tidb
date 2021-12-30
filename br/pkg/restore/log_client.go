@@ -17,18 +17,20 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	filter "github.com/pingcap/tidb-tools/pkg/table-filter"
+	"github.com/tikv/client-go/v2/oracle"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/pingcap/tidb/br/pkg/cdclog"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
 	"github.com/pingcap/tidb/br/pkg/kv"
+	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/br/pkg/utils"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/parser/model"
 	titable "github.com/pingcap/tidb/table"
-	"github.com/tikv/client-go/v2/oracle"
-	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -67,7 +69,7 @@ type LogClient struct {
 	ddlLock sync.Mutex
 
 	restoreClient  *Client
-	splitClient    SplitClient
+	splitClient    split.SplitClient
 	importerClient ImporterClient
 
 	// ingester is used to write and ingest kvs to tikv.
@@ -113,7 +115,7 @@ func NewLogRestoreClient(
 	}
 
 	tlsConf := restoreClient.GetTLSConfig()
-	splitClient := NewSplitClient(restoreClient.GetPDClient(), tlsConf)
+	splitClient := split.NewSplitClient(restoreClient.GetPDClient(), tlsConf)
 	importClient := NewImportClient(splitClient, tlsConf, restoreClient.keepaliveConf)
 
 	cfg := concurrencyCfg{

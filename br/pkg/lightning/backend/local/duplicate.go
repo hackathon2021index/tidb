@@ -27,20 +27,6 @@ import (
 	"github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
-	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
-	"github.com/pingcap/tidb/br/pkg/lightning/common"
-	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
-	"github.com/pingcap/tidb/br/pkg/lightning/log"
-	"github.com/pingcap/tidb/br/pkg/logutil"
-	"github.com/pingcap/tidb/br/pkg/restore"
-	"github.com/pingcap/tidb/br/pkg/utils"
-	"github.com/pingcap/tidb/distsql"
-	tidbkv "github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/table"
-	"github.com/pingcap/tidb/tablecodec"
-	"github.com/pingcap/tidb/util/codec"
-	"github.com/pingcap/tidb/util/ranger"
 	tikvclient "github.com/tikv/client-go/v2/tikv"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -50,6 +36,21 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
+	"github.com/pingcap/tidb/br/pkg/lightning/common"
+	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
+	"github.com/pingcap/tidb/br/pkg/lightning/log"
+	"github.com/pingcap/tidb/br/pkg/logutil"
+	"github.com/pingcap/tidb/br/pkg/restore/split"
+	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/distsql"
+	tidbkv "github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/tidb/table"
+	"github.com/pingcap/tidb/tablecodec"
+	"github.com/pingcap/tidb/util/codec"
+	"github.com/pingcap/tidb/util/ranger"
 )
 
 const (
@@ -65,7 +66,7 @@ type DuplicateRequest struct {
 
 type DuplicateManager struct {
 	errorMgr          *errormanager.ErrorManager
-	splitCli          restore.SplitClient
+	splitCli          split.SplitClient
 	tikvCli           *tikvclient.KVStore
 	regionConcurrency int
 	connPool          common.GRPCConns
@@ -253,7 +254,7 @@ func (manager *DuplicateManager) sendRequestToTiKV(ctx context.Context,
 	startKey := codec.EncodeBytes([]byte{}, req.start)
 	endKey := codec.EncodeBytes([]byte{}, req.end)
 
-	regions, err := restore.PaginateScanRegion(ctx, manager.splitCli, startKey, endKey, scanRegionLimit)
+	regions, err := split.PaginateScanRegion(ctx, manager.splitCli, startKey, endKey, scanRegionLimit)
 	if err != nil {
 		return err
 	}
@@ -263,9 +264,9 @@ func (manager *DuplicateManager) sendRequestToTiKV(ctx context.Context,
 		if tryTimes > maxRetryTimes {
 			return errors.Errorf("retry time exceed limit")
 		}
-		unfinishedRegions := make([]*restore.RegionInfo, 0)
+		unfinishedRegions := make([]*split.RegionInfo, 0)
 		waitingClients := make([]import_sstpb.ImportSST_DuplicateDetectClient, 0)
-		watingRegions := make([]*restore.RegionInfo, 0)
+		watingRegions := make([]*split.RegionInfo, 0)
 		for idx, region := range regions {
 			if len(waitingClients) > manager.regionConcurrency {
 				r := regions[idx:]
@@ -350,7 +351,7 @@ func (manager *DuplicateManager) sendRequestToTiKV(ctx context.Context,
 					cliLogger.Warn("[detect-dupe] meet key error in duplicate detect response from TiKV, retry again ",
 						zap.String("RegionError", resp.GetRegionError().GetMessage()))
 
-					r, err := restore.PaginateScanRegion(ctx, manager.splitCli, watingRegions[idx].Region.GetStartKey(), watingRegions[idx].Region.GetEndKey(), scanRegionLimit)
+					r, err := split.PaginateScanRegion(ctx, manager.splitCli, watingRegions[idx].Region.GetStartKey(), watingRegions[idx].Region.GetEndKey(), scanRegionLimit)
 					if err != nil {
 						unfinishedRegions = append(unfinishedRegions, watingRegions[idx])
 					} else {
@@ -687,7 +688,7 @@ func (manager *DuplicateManager) getValues(
 }
 
 func (manager *DuplicateManager) getDuplicateStream(ctx context.Context,
-	region *restore.RegionInfo,
+	region *split.RegionInfo,
 	start []byte, end []byte) (import_sstpb.ImportSST_DuplicateDetectClient, error) {
 	leader := region.Leader
 	if leader == nil {

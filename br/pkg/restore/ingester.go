@@ -30,18 +30,20 @@ import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/br/pkg/conn"
-	berrors "github.com/pingcap/tidb/br/pkg/errors"
-	"github.com/pingcap/tidb/br/pkg/kv"
-	"github.com/pingcap/tidb/br/pkg/logutil"
-	"github.com/pingcap/tidb/br/pkg/membuf"
-	"github.com/pingcap/tidb/br/pkg/utils"
 	"github.com/tikv/pd/pkg/codec"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/pingcap/tidb/br/pkg/conn"
+	berrors "github.com/pingcap/tidb/br/pkg/errors"
+	"github.com/pingcap/tidb/br/pkg/kv"
+	"github.com/pingcap/tidb/br/pkg/logutil"
+	"github.com/pingcap/tidb/br/pkg/membuf"
+	"github.com/pingcap/tidb/br/pkg/restore/split"
+	"github.com/pingcap/tidb/br/pkg/utils"
 )
 
 const (
@@ -88,7 +90,7 @@ type Ingester struct {
 	tlsConf *tls.Config
 	conns   gRPCConns
 
-	splitCli   SplitClient
+	splitCli   split.SplitClient
 	WorkerPool *utils.WorkerPool
 
 	batchWriteKVPairs int
@@ -97,7 +99,7 @@ type Ingester struct {
 
 // NewIngester creates Ingester.
 func NewIngester(
-	splitCli SplitClient, cfg concurrencyCfg, commitTS uint64, tlsConf *tls.Config,
+	splitCli split.SplitClient, cfg concurrencyCfg, commitTS uint64, tlsConf *tls.Config,
 ) *Ingester {
 	workerPool := utils.NewWorkerPool(cfg.IngestConcurrency, "ingest worker")
 	return &Ingester{
@@ -173,7 +175,7 @@ func (i *Ingester) writeAndIngestByRange(
 			logutil.Key("end", end), logutil.Key("pairStart", pairStart), logutil.Key("pairEnd", pairEnd))
 		return nil
 	}
-	var regions []*RegionInfo
+	var regions []*split.RegionInfo
 	var err error
 	ctx, cancel := context.WithCancel(ctxt)
 	defer cancel()
@@ -189,7 +191,7 @@ WriteAndIngest:
 		}
 		startKey := codec.EncodeBytes(pairStart)
 		endKey := codec.EncodeBytes(kv.NextKey(pairEnd))
-		regions, err = PaginateScanRegion(ctx, i.splitCli, startKey, endKey, 128)
+		regions, err = split.PaginateScanRegion(ctx, i.splitCli, startKey, endKey, 128)
 		if err != nil || len(regions) == 0 {
 			log.Warn("scan region failed", zap.Error(err), zap.Int("region_len", len(regions)),
 				logutil.Key("startKey", startKey), logutil.Key("endKey", endKey), zap.Int("retry", retry))
@@ -228,7 +230,7 @@ WriteAndIngest:
 func (i *Ingester) writeAndIngestPairs(
 	ctx context.Context,
 	iter kv.Iter,
-	region *RegionInfo,
+	region *split.RegionInfo,
 	start, end []byte,
 ) (*Range, error) {
 	var err error
@@ -272,7 +274,7 @@ loopWrite:
 					}
 				})
 				var retryTy retryType
-				var newRegion *RegionInfo
+				var newRegion *split.RegionInfo
 				retryTy, newRegion, err = i.isIngestRetryable(ctx, resp, region, meta)
 				if err == nil {
 					// ingest next meta
@@ -310,7 +312,7 @@ loopWrite:
 func (i *Ingester) writeToTiKV(
 	ctx context.Context,
 	iter kv.Iter,
-	region *RegionInfo,
+	region *split.RegionInfo,
 	start, end []byte,
 ) ([]*sst.SSTMeta, *Range, error) {
 	begin := time.Now()
@@ -471,7 +473,7 @@ func (i *Ingester) writeToTiKV(
 	return leaderPeerMetas, remainRange, nil
 }
 
-func (i *Ingester) ingest(ctx context.Context, meta *sst.SSTMeta, region *RegionInfo) (*sst.IngestResponse, error) {
+func (i *Ingester) ingest(ctx context.Context, meta *sst.SSTMeta, region *split.RegionInfo) (*sst.IngestResponse, error) {
 	leader := region.Leader
 	if leader == nil {
 		leader = region.Region.GetPeers()[0]
@@ -521,14 +523,14 @@ func (i *Ingester) getGrpcConnLocked(ctx context.Context, storeID uint64) (*grpc
 func (i *Ingester) isIngestRetryable(
 	ctx context.Context,
 	resp *sst.IngestResponse,
-	region *RegionInfo,
+	region *split.RegionInfo,
 	meta *sst.SSTMeta,
-) (retryType, *RegionInfo, error) {
+) (retryType, *split.RegionInfo, error) {
 	if resp.GetError() == nil {
 		return retryNone, nil, nil
 	}
 
-	getRegion := func() (*RegionInfo, error) {
+	getRegion := func() (*split.RegionInfo, error) {
 		for retry := 0; ; retry++ {
 			newRegion, err := i.splitCli.GetRegion(ctx, region.Region.GetStartKey())
 			if err != nil {
@@ -547,12 +549,12 @@ func (i *Ingester) isIngestRetryable(
 		}
 	}
 
-	var newRegion *RegionInfo
+	var newRegion *split.RegionInfo
 	var err error
 	switch errPb := resp.GetError(); {
 	case errPb.NotLeader != nil:
 		if newLeader := errPb.GetNotLeader().GetLeader(); newLeader != nil {
-			newRegion = &RegionInfo{
+			newRegion = &split.RegionInfo{
 				Leader: newLeader,
 				Region: region.Region,
 			}
@@ -581,7 +583,7 @@ func (i *Ingester) isIngestRetryable(
 					}
 				}
 				if newLeader != nil {
-					newRegion = &RegionInfo{
+					newRegion = &split.RegionInfo{
 						Leader: newLeader,
 						Region: currentRegion,
 					}

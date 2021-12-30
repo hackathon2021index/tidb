@@ -39,6 +39,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/metautil"
 	"github.com/pingcap/tidb/br/pkg/pdutil"
 	"github.com/pingcap/tidb/br/pkg/redact"
+	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/br/pkg/summary"
 	"github.com/pingcap/tidb/br/pkg/utils"
@@ -58,7 +59,7 @@ const defaultChecksumConcurrency = 64
 // Client sends requests to restore files.
 type Client struct {
 	pdClient      pd.Client
-	toolClient    SplitClient
+	toolClient    split.SplitClient
 	fileImporter  FileImporter
 	workerPool    *utils.WorkerPool
 	tlsConf       *tls.Config
@@ -122,7 +123,7 @@ func NewRestoreClient(
 
 	return &Client{
 		pdClient:      pdClient,
-		toolClient:    NewSplitClient(pdClient, tlsConf),
+		toolClient:    split.NewSplitClient(pdClient, tlsConf),
 		db:            db,
 		tlsConf:       tlsConf,
 		keepaliveConf: keepaliveConf,
@@ -207,7 +208,7 @@ func (rc *Client) InitBackupMeta(
 	rc.backupMeta = backupMeta
 	log.Info("load backupmeta", zap.Int("databases", len(rc.databases)), zap.Int("jobs", len(rc.ddlJobs)))
 
-	metaClient := NewSplitClient(rc.pdClient, rc.tlsConf)
+	metaClient := split.NewSplitClient(rc.pdClient, rc.tlsConf)
 	importCli := NewImportClient(metaClient, rc.tlsConf, rc.keepaliveConf)
 	rc.fileImporter = NewFileImporter(metaClient, importCli, backend, rc.backupMeta.IsRawKv, rc.rateLimit)
 	return rc.fileImporter.CheckMultiIngestSupport(c, rc.pdClient)
