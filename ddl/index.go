@@ -20,8 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pingcap/tidb/ddl/sst"
-	util2 "github.com/pingcap/tidb/table/tables/util"
+	tableutil "github.com/pingcap/tidb/table/tables/util"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
@@ -513,8 +512,6 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 	originalState := indexInfo.State
 	switch indexInfo.State {
 	case model.StateNone:
-		// TODO: optimize index-ddl
-		sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.RealStartTS})
 		// none -> delete only
 		indexInfo.State = model.StateDeleteOnly
 		updateHiddenColumns(tblInfo, indexInfo, model.StatePublic)
@@ -605,11 +602,6 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		}
 		// Finish this job.
 		job.FinishTableJob(model.JobStateDone, model.StatePublic, ver, tblInfo)
-		// TODO: optimize index ddl.
-		err = sst.FinishIndexOp(w.ctx, job.StartTS)
-		if err != nil {
-			logutil.BgLogger().Error("FinishIndexOp err" + err.Error())
-		}
 	default:
 		err = ErrInvalidDDLState.GenWithStackByArgs("index", tblInfo.State)
 	}
@@ -1088,7 +1080,7 @@ func (w *baseIndexWorker) getIndexRecord(idxInfo *model.IndexInfo, handle kv.Han
 			idxVal[j] = idxColumnVal
 			continue
 		}
-		idxColumnVal, err = util2.GetColDefaultValue(w.sessCtx, col, w.defaultVals)
+		idxColumnVal, err = tableutil.GetColDefaultValue(w.sessCtx, col, w.defaultVals)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
@@ -1217,7 +1209,7 @@ func (w *addIndexWorker) checkHandleExists(key kv.Key, value []byte, handle kv.H
 	if hasBeenBackFilled {
 		return nil
 	}
-	colInfos := util2.BuildRowcodecColInfoForIndexColumns(idxInfo, tblInfo)
+	colInfos := tableutil.BuildRowcodecColInfoForIndexColumns(idxInfo, tblInfo)
 	values, err := tablecodec.DecodeIndexKV(key, value, idxColLen, tablecodec.HandleNotNeeded, colInfos)
 	if err != nil {
 		return err
