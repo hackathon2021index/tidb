@@ -24,6 +24,9 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+	"github.com/tikv/client-go/v2/oracle"
+	"github.com/tikv/client-go/v2/tikv"
+
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/domain"
@@ -45,6 +48,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/table"
+	tablesutil "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/table/temptable"
 	"github.com/pingcap/tidb/types"
 	driver "github.com/pingcap/tidb/types/parser_driver"
@@ -57,12 +61,11 @@ import (
 	"github.com/pingcap/tidb/util/ranger"
 	"github.com/pingcap/tidb/util/sem"
 	"github.com/pingcap/tidb/util/set"
-	"github.com/tikv/client-go/v2/oracle"
-	"github.com/tikv/client-go/v2/tikv"
 
 	"github.com/cznic/mathutil"
-	"github.com/pingcap/tidb/table/tables"
 	"go.uber.org/zap"
+
+	"github.com/pingcap/tidb/table/tables"
 )
 
 type visitInfo struct {
@@ -1521,7 +1524,7 @@ func tryGetCommonHandleCols(t table.Table, allColSchema *expression.Schema) ([]*
 	if !tblInfo.IsCommonHandle {
 		return nil, nil, false
 	}
-	pk := tables.FindPrimaryIndex(tblInfo)
+	pk := tablesutil.FindPrimaryIndex(tblInfo)
 	commonHandleCols, _ := expression.IndexInfo2Cols(tblInfo.Columns, allColSchema.Columns, pk)
 	commonHandelColInfos := tables.TryGetCommonPkColumns(t)
 	return commonHandelColInfos, commonHandleCols, true
@@ -1735,7 +1738,7 @@ func BuildHandleColsForAnalyze(ctx sessionctx.Context, tblInfo *model.TableInfo,
 			Index:   index,
 		}}
 	case tblInfo.IsCommonHandle:
-		pkIdx := tables.FindPrimaryIndex(tblInfo)
+		pkIdx := tablesutil.FindPrimaryIndex(tblInfo)
 		pkColLen := len(pkIdx.Columns)
 		columns := make([]*expression.Column, pkColLen)
 		for i := 0; i < pkColLen; i++ {
@@ -3712,7 +3715,7 @@ func buildHandleColumnInfos(tblInfo *model.TableInfo) []*model.ColumnInfo {
 			return []*model.ColumnInfo{col}
 		}
 	case tblInfo.IsCommonHandle:
-		pkIdx := tables.FindPrimaryIndex(tblInfo)
+		pkIdx := tablesutil.FindPrimaryIndex(tblInfo)
 		pkCols := make([]*model.ColumnInfo, 0, len(pkIdx.Columns))
 		cols := tblInfo.Columns
 		for _, idxCol := range pkIdx.Columns {

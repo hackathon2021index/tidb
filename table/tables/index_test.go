@@ -18,6 +18,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser"
@@ -25,6 +27,7 @@ import (
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/testkit"
 	"github.com/pingcap/tidb/types"
@@ -32,7 +35,6 @@ import (
 	"github.com/pingcap/tidb/util/collate"
 	"github.com/pingcap/tidb/util/mock"
 	"github.com/pingcap/tidb/util/rowcodec"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSingleColumnCommonHandle(t *testing.T) {
@@ -70,7 +72,7 @@ func TestSingleColumnCommonHandle(t *testing.T) {
 		val, err := txn.Get(context.Background(), key)
 		require.NoError(t, err)
 		colVals, err := tablecodec.DecodeIndexKV(key, val, 1, tablecodec.HandleDefault,
-			tables.BuildRowcodecColInfoForIndexColumns(idx.Meta(), tblInfo))
+			util.BuildRowcodecColInfoForIndexColumns(idx.Meta(), tblInfo))
 		require.NoError(t, err)
 		require.Len(t, colVals, 2)
 		_, d, err := codec.DecodeOne(colVals[0])
@@ -87,7 +89,7 @@ func TestSingleColumnCommonHandle(t *testing.T) {
 		unTouchedVal := append([]byte{1}, val[1:]...)
 		unTouchedVal = append(unTouchedVal, kv.UnCommitIndexKVFlag)
 		_, err = tablecodec.DecodeIndexKV(key, unTouchedVal, 1, tablecodec.HandleDefault,
-			tables.BuildRowcodecColInfoForIndexColumns(idx.Meta(), tblInfo))
+			util.BuildRowcodecColInfoForIndexColumns(idx.Meta(), tblInfo))
 		require.NoError(t, err)
 	}
 }
@@ -138,7 +140,7 @@ func TestMultiColumnCommonHandle(t *testing.T) {
 		require.NoError(t, err)
 		val, err := txn.Get(context.Background(), key)
 		require.NoError(t, err)
-		colInfo := tables.BuildRowcodecColInfoForIndexColumns(idx.Meta(), tblInfo)
+		colInfo := util.BuildRowcodecColInfoForIndexColumns(idx.Meta(), tblInfo)
 		colInfo = append(colInfo, rowcodec.ColInfo{
 			ID:         a.ID,
 			IsPKHandle: false,

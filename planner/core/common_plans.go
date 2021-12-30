@@ -22,6 +22,9 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
+	"github.com/tikv/client-go/v2/oracle"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/expression"
@@ -36,7 +39,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/table"
-	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/types"
 	driver "github.com/pingcap/tidb/types/parser_driver"
 	"github.com/pingcap/tidb/util/chunk"
@@ -46,8 +49,6 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/ranger"
 	"github.com/pingcap/tidb/util/texttree"
-	"github.com/tikv/client-go/v2/oracle"
-	"go.uber.org/zap"
 )
 
 var planCacheCounter = metrics.PlanCacheCounter.WithLabelValues("prepare")
@@ -721,7 +722,7 @@ func (e *Execute) rebuildRange(p Plan) error {
 
 func (e *Execute) buildRangeForTableScan(sctx sessionctx.Context, ts *PhysicalTableScan) (err error) {
 	if ts.Table.IsCommonHandle {
-		pk := tables.FindPrimaryIndex(ts.Table)
+		pk := util.FindPrimaryIndex(ts.Table)
 		pkCols := make([]*expression.Column, 0, len(pk.Columns))
 		pkColsLen := make([]int, 0, len(pk.Columns))
 		for _, colInfo := range pk.Columns {
@@ -1469,7 +1470,7 @@ func IsPointGetWithPKOrUniqueKeyByAutoCommit(ctx sessionctx.Context, p Plan) (bo
 		}
 		pkLength := 1
 		if tableScan.Table.IsCommonHandle {
-			pkIdx := tables.FindPrimaryIndex(tableScan.Table)
+			pkIdx := util.FindPrimaryIndex(tableScan.Table)
 			pkLength = len(pkIdx.Columns)
 		}
 		return len(tableScan.Ranges[0].LowVal) == pkLength, nil

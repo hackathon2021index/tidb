@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/errno"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/kv"
@@ -28,6 +29,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
@@ -77,7 +79,7 @@ func getKeysNeedCheck(ctx context.Context, sctx sessionctx.Context, t table.Tabl
 			}
 		}
 	} else if t.Meta().IsCommonHandle {
-		pkIdxInfo = tables.FindPrimaryIndex(t.Meta())
+		pkIdxInfo = util.FindPrimaryIndex(t.Meta())
 		for _, idxCol := range pkIdxInfo.Columns {
 			tblHandleCols = append(tblHandleCols, t.Cols()[idxCol.Offset])
 		}
@@ -243,7 +245,7 @@ func getOldRow(ctx context.Context, sctx sessionctx.Context, txn kv.Transaction,
 	}
 
 	cols := t.WritableCols()
-	oldRow, oldRowMap, err := tables.DecodeRawRowData(sctx, t.Meta(), handle, cols, oldValue)
+	oldRow, oldRowMap, err := util.DecodeRawRowData(sctx, t.Meta(), handle, cols, oldValue)
 	if err != nil {
 		return nil, err
 	}

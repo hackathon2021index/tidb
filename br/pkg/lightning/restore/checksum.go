@@ -26,6 +26,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tipb/go-tipb"
+	"github.com/tikv/client-go/v2/oracle"
+	pd "github.com/tikv/pd/client"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/br/pkg/checksum"
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
@@ -33,14 +38,11 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/metric"
 	"github.com/pingcap/tidb/br/pkg/pdutil"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+	"github.com/pingcap/tidb/br/pkg/utils/utilmath"
 	tidbcfg "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/store/driver"
-	"github.com/pingcap/tipb/go-tipb"
-	"github.com/tikv/client-go/v2/oracle"
-	pd "github.com/tikv/pd/client"
-	"go.uber.org/zap"
 )
 
 const (
@@ -314,11 +316,11 @@ func (e *tikvChecksumManager) checksumDB(ctx context.Context, tableInfo *checkpo
 			zap.Int("concurrency", distSQLScanConcurrency), zap.Int("retry", i))
 
 		// do not retry context.Canceled error
-		if !utils.IsRetryableError(err) {
+		if !utildb.IsRetryableError(err) {
 			break
 		}
 		if distSQLScanConcurrency > minDistSQLScanConcurrency {
-			distSQLScanConcurrency = utils.MaxInt(distSQLScanConcurrency/2, minDistSQLScanConcurrency)
+			distSQLScanConcurrency = utilmath.MaxInt(distSQLScanConcurrency/2, minDistSQLScanConcurrency)
 		}
 	}
 

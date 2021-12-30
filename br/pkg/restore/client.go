@@ -21,23 +21,6 @@ import (
 	"github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/br/pkg/checksum"
-	"github.com/pingcap/tidb/br/pkg/conn"
-	berrors "github.com/pingcap/tidb/br/pkg/errors"
-	"github.com/pingcap/tidb/br/pkg/glue"
-	"github.com/pingcap/tidb/br/pkg/logutil"
-	"github.com/pingcap/tidb/br/pkg/metautil"
-	"github.com/pingcap/tidb/br/pkg/pdutil"
-	"github.com/pingcap/tidb/br/pkg/redact"
-	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tidb/br/pkg/summary"
-	"github.com/pingcap/tidb/br/pkg/utils"
-	"github.com/pingcap/tidb/domain"
-	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/statistics/handle"
-	"github.com/pingcap/tidb/tablecodec"
-	"github.com/pingcap/tidb/util/codec"
 	"github.com/tikv/client-go/v2/oracle"
 	pd "github.com/tikv/pd/client"
 	"github.com/tikv/pd/server/schedule/placement"
@@ -47,6 +30,27 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/pingcap/tidb/br/pkg/checksum"
+	"github.com/pingcap/tidb/br/pkg/conn/util"
+	berrors "github.com/pingcap/tidb/br/pkg/errors"
+	"github.com/pingcap/tidb/br/pkg/glue"
+	"github.com/pingcap/tidb/br/pkg/logutil"
+	"github.com/pingcap/tidb/br/pkg/metautil"
+	"github.com/pingcap/tidb/br/pkg/pdutil"
+	"github.com/pingcap/tidb/br/pkg/redact"
+	"github.com/pingcap/tidb/br/pkg/restore/split"
+	"github.com/pingcap/tidb/br/pkg/storage"
+	"github.com/pingcap/tidb/br/pkg/summary"
+	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+	"github.com/pingcap/tidb/br/pkg/utils/utilpool"
+	"github.com/pingcap/tidb/domain"
+	"github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/tidb/statistics/handle"
+	"github.com/pingcap/tidb/tablecodec"
+	"github.com/pingcap/tidb/util/codec"
 )
 
 // defaultChecksumConcurrency is the default number of the concurrent
@@ -56,9 +60,9 @@ const defaultChecksumConcurrency = 64
 // Client sends requests to restore files.
 type Client struct {
 	pdClient      pd.Client
-	toolClient    SplitClient
+	toolClient    split.SplitClient
 	fileImporter  FileImporter
-	workerPool    *utils.WorkerPool
+	workerPool    *utilpool.WorkerPool
 	tlsConf       *tls.Config
 	keepaliveConf keepalive.ClientParameters
 
@@ -120,7 +124,7 @@ func NewRestoreClient(
 
 	return &Client{
 		pdClient:      pdClient,
-		toolClient:    NewSplitClient(pdClient, tlsConf),
+		toolClient:    split.NewSplitClient(pdClient, tlsConf),
 		db:            db,
 		tlsConf:       tlsConf,
 		keepaliveConf: keepaliveConf,
@@ -205,7 +209,7 @@ func (rc *Client) InitBackupMeta(
 	rc.backupMeta = backupMeta
 	log.Info("load backupmeta", zap.Int("databases", len(rc.databases)), zap.Int("jobs", len(rc.ddlJobs)))
 
-	metaClient := NewSplitClient(rc.pdClient, rc.tlsConf)
+	metaClient := split.NewSplitClient(rc.pdClient, rc.tlsConf)
 	importCli := NewImportClient(metaClient, rc.tlsConf, rc.keepaliveConf)
 	rc.fileImporter = NewFileImporter(metaClient, importCli, backend, rc.backupMeta.IsRawKv, rc.rateLimit)
 	return rc.fileImporter.CheckMultiIngestSupport(c, rc.pdClient)
@@ -274,7 +278,7 @@ func (rc *Client) GetFilesInRawRange(startKey []byte, endKey []byte, cf string) 
 
 // SetConcurrency sets the concurrency of dbs tables files.
 func (rc *Client) SetConcurrency(c uint) {
-	rc.workerPool = utils.NewWorkerPool(c, "file")
+	rc.workerPool = utilpool.NewWorkerPool(c, "file")
 }
 
 // EnableOnline sets the mode of restore to online.
@@ -302,7 +306,7 @@ func (rc *Client) ResetTS(ctx context.Context, pdAddrs []string) error {
 	restoreTS := rc.backupMeta.GetEndVersion()
 	log.Info("reset pd timestamp", zap.Uint64("ts", restoreTS))
 	i := 0
-	return utils.WithRetry(ctx, func() error {
+	return utildb.WithRetry(ctx, func() error {
 		idx := i % len(pdAddrs)
 		i++
 		return pdutil.ResetTS(ctx, pdAddrs[idx], restoreTS, rc.tlsConf)
@@ -313,7 +317,7 @@ func (rc *Client) ResetTS(ctx context.Context, pdAddrs []string) error {
 func (rc *Client) GetPlacementRules(ctx context.Context, pdAddrs []string) ([]placement.Rule, error) {
 	var placementRules []placement.Rule
 	i := 0
-	errRetry := utils.WithRetry(ctx, func() error {
+	errRetry := utildb.WithRetry(ctx, func() error {
 		var err error
 		idx := i % len(pdAddrs)
 		i++
@@ -515,7 +519,7 @@ func (rc *Client) createTablesWithDBPool(ctx context.Context,
 	createOneTable func(ctx context.Context, db *DB, t *metautil.Table) error,
 	tables []*metautil.Table, dbPool []*DB) error {
 	eg, ectx := errgroup.WithContext(ctx)
-	workers := utils.NewWorkerPool(uint(len(dbPool)), "DDL workers")
+	workers := utilpool.NewWorkerPool(uint(len(dbPool)), "DDL workers")
 	for _, t := range tables {
 		table := t
 		workers.ApplyWithIDInErrorGroup(eg, func(id uint64) error {
@@ -548,7 +552,7 @@ func (rc *Client) ExecDDLs(ctx context.Context, ddlJobs []*model.Job) error {
 
 func (rc *Client) setSpeedLimit(ctx context.Context) error {
 	if !rc.hasSpeedLimited && rc.rateLimit != 0 {
-		stores, err := conn.GetAllTiKVStores(ctx, rc.pdClient, conn.SkipTiFlash)
+		stores, err := util.GetAllTiKVStores(ctx, rc.pdClient, util.SkipTiFlash)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -738,7 +742,7 @@ func (rc *Client) SwitchToNormalMode(ctx context.Context) error {
 }
 
 func (rc *Client) switchTiKVMode(ctx context.Context, mode import_sstpb.SwitchMode) error {
-	stores, err := conn.GetAllTiKVStores(ctx, rc.pdClient, conn.SkipTiFlash)
+	stores, err := util.GetAllTiKVStores(ctx, rc.pdClient, util.SkipTiFlash)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -798,7 +802,7 @@ func (rc *Client) GoValidateChecksum(
 		defer wg.Done()
 		rc.updateMetaAndLoadStats(ctx, loadStatCh)
 	}()
-	workers := utils.NewWorkerPool(defaultChecksumConcurrency, "RestoreChecksum")
+	workers := utilpool.NewWorkerPool(defaultChecksumConcurrency, "RestoreChecksum")
 	go func() {
 		eg, ectx := errgroup.WithContext(ctx)
 		defer func() {
@@ -1139,7 +1143,7 @@ func (rc *Client) PreCheckTableTiFlashReplica(
 	ctx context.Context,
 	tables []*metautil.Table,
 ) error {
-	tiFlashStores, err := conn.GetAllTiKVStores(ctx, rc.pdClient, conn.TiFlashOnly)
+	tiFlashStores, err := util.GetAllTiKVStores(ctx, rc.pdClient, util.TiFlashOnly)
 	if err != nil {
 		return errors.Trace(err)
 	}

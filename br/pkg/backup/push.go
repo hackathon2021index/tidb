@@ -12,11 +12,14 @@ import (
 	"github.com/pingcap/failpoint"
 	backuppb "github.com/pingcap/kvproto/pkg/brpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
+
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/br/pkg/redact"
 	"github.com/pingcap/tidb/br/pkg/rtree"
 	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+
 	"go.uber.org/zap"
 )
 
@@ -159,7 +162,7 @@ func (push *pushDown) pushBackup(
 					logutil.CL(ctx).Error("backup occur cluster ID error", zap.Reflect("error", v))
 					return res, errors.Annotatef(berrors.ErrKVClusterIDMismatch, "%v", errPb)
 				default:
-					if utils.MessageIsRetryableStorageError(errPb.GetMsg()) {
+					if utildb.MessageIsRetryableStorageError(errPb.GetMsg()) {
 						logutil.CL(ctx).Warn("backup occur storage error", zap.String("error", errPb.GetMsg()))
 						continue
 					}

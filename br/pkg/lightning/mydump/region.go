@@ -22,11 +22,13 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/worker"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utilmath"
+
 	"go.uber.org/zap"
 )
 
@@ -154,7 +156,7 @@ func MakeTableRegions(
 	execCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	concurrency := utils.MaxInt(cfg.App.RegionConcurrency, 2)
+	concurrency := utilmath.MaxInt(cfg.App.RegionConcurrency, 2)
 	fileChan := make(chan FileInfo, concurrency)
 	resultChan := make(chan fileRegionRes, concurrency)
 	var wg sync.WaitGroup

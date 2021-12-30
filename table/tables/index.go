@@ -22,12 +22,13 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/table"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/rowcodec"
@@ -283,7 +284,7 @@ func (c *index) Seek(sc *stmtctx.StatementContext, r kv.Retriever, indexedValues
 	if it.Valid() && it.Key().Cmp(key) == 0 {
 		hit = true
 	}
-	colInfos := BuildRowcodecColInfoForIndexColumns(c.idxInfo, c.tblInfo)
+	colInfos := util.BuildRowcodecColInfoForIndexColumns(c.idxInfo, c.tblInfo)
 	tps := BuildFieldTypesForIndexColumns(c.idxInfo, c.tblInfo)
 	return &indexIter{it: it, idx: c, prefix: c.prefix, colInfos: colInfos, tps: tps}, hit, nil
 }
@@ -295,7 +296,7 @@ func (c *index) SeekFirst(r kv.Retriever) (iter table.IndexIterator, err error) 
 	if err != nil {
 		return nil, err
 	}
-	colInfos := BuildRowcodecColInfoForIndexColumns(c.idxInfo, c.tblInfo)
+	colInfos := util.BuildRowcodecColInfoForIndexColumns(c.idxInfo, c.tblInfo)
 	tps := BuildFieldTypesForIndexColumns(c.idxInfo, c.tblInfo)
 	return &indexIter{it: it, idx: c, prefix: c.prefix, colInfos: colInfos, tps: tps}, nil
 }
@@ -364,21 +365,6 @@ func IsIndexWritable(idx table.Index) bool {
 	return false
 }
 
-// BuildRowcodecColInfoForIndexColumns builds []rowcodec.ColInfo for the given index.
-// The result can be used for decoding index key-values.
-func BuildRowcodecColInfoForIndexColumns(idxInfo *model.IndexInfo, tblInfo *model.TableInfo) []rowcodec.ColInfo {
-	colInfo := make([]rowcodec.ColInfo, 0, len(idxInfo.Columns))
-	for _, idxCol := range idxInfo.Columns {
-		col := tblInfo.Columns[idxCol.Offset]
-		colInfo = append(colInfo, rowcodec.ColInfo{
-			ID:         col.ID,
-			IsPKHandle: tblInfo.PKIsHandle && mysql.HasPriKeyFlag(col.Flag),
-			Ft:         rowcodec.FieldTypeFromModelColumn(col),
-		})
-	}
-	return colInfo
-}
-
 // BuildFieldTypesForIndexColumns builds the index columns field types.
 func BuildFieldTypesForIndexColumns(idxInfo *model.IndexInfo, tblInfo *model.TableInfo) []*types.FieldType {
 	tps := make([]*types.FieldType, 0, len(idxInfo.Columns))
@@ -394,7 +380,7 @@ func TryAppendCommonHandleRowcodecColInfos(colInfo []rowcodec.ColInfo, tblInfo *
 	if !tblInfo.IsCommonHandle || tblInfo.CommonHandleVersion == 0 {
 		return colInfo
 	}
-	if pkIdx := FindPrimaryIndex(tblInfo); pkIdx != nil {
+	if pkIdx := util.FindPrimaryIndex(tblInfo); pkIdx != nil {
 		for _, idxCol := range pkIdx.Columns {
 			col := tblInfo.Columns[idxCol.Offset]
 			colInfo = append(colInfo, rowcodec.ColInfo{

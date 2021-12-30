@@ -36,6 +36,9 @@ import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
+	"github.com/tikv/client-go/v2/tikv"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/domain"
@@ -56,6 +59,7 @@ import (
 	"github.com/pingcap/tidb/store/helper"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	tablesutil "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util"
@@ -66,8 +70,6 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/pdapi"
 	"github.com/pingcap/tidb/util/sqlexec"
-	"github.com/tikv/client-go/v2/tikv"
-	"go.uber.org/zap"
 )
 
 const (
@@ -174,7 +176,7 @@ func (t *tikvHandlerTool) getHandle(tb table.PhysicalTable, params map[string]st
 		handle = kv.IntHandle(intHandle)
 	} else {
 		tblInfo := tb.Meta()
-		pkIdx := tables.FindPrimaryIndex(tblInfo)
+		pkIdx := tablesutil.FindPrimaryIndex(tblInfo)
 		if pkIdx == nil || !tblInfo.IsCommonHandle {
 			return nil, errors.BadRequestf("Clustered common handle not found.")
 		}

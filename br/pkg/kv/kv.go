@@ -24,6 +24,8 @@ import (
 	"github.com/pingcap/errors"
 	sst "github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/log"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/br/pkg/redact"
 	"github.com/pingcap/tidb/kv"
@@ -31,10 +33,9 @@ import (
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/table"
-	"github.com/pingcap/tidb/table/tables"
+	context2 "github.com/pingcap/tidb/table/tables/context"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
-	"go.uber.org/zap"
 )
 
 var extraHandleColumnInfo = model.NewExtraHandleColInfo()
@@ -230,8 +231,8 @@ type tableKVEncoder struct {
 func NewTableKVEncoder(tbl table.Table, options *SessionOptions) Encoder {
 	se := newSession(options)
 	// Set CommonAddRecordCtx to session to reuse the slices and BufStore in AddRecord
-	recordCtx := tables.NewCommonAddRecordCtx(len(tbl.Cols()))
-	tables.SetAddRecordCtx(se, recordCtx)
+	recordCtx := context2.NewCommonAddRecordCtx(len(tbl.Cols()))
+	context2.SetAddRecordCtx(se, recordCtx)
 	return &tableKVEncoder{
 		tbl: tbl,
 		se:  se,

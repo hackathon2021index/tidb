@@ -30,7 +30,11 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/diagnosticspb"
+	"github.com/pingcap/tipb/go-tipb"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/distsql"
+	"github.com/pingcap/tidb/distsql/request"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/executor/aggfuncs"
 	"github.com/pingcap/tidb/expression"
@@ -49,6 +53,7 @@ import (
 	"github.com/pingcap/tidb/store/helper"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	util2 "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/table/temptable"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util"
@@ -62,8 +67,6 @@ import (
 	"github.com/pingcap/tidb/util/ranger"
 	"github.com/pingcap/tidb/util/rowcodec"
 	"github.com/pingcap/tidb/util/timeutil"
-	"github.com/pingcap/tipb/go-tipb"
-	"go.uber.org/zap"
 )
 
 var (
@@ -436,7 +439,7 @@ func buildIdxColsConcatHandleCols(tblInfo *model.TableInfo, indexInfo *model.Ind
 	handleLen := 1
 	var pkCols []*model.IndexColumn
 	if tblInfo.IsCommonHandle {
-		pkIdx := tables.FindPrimaryIndex(tblInfo)
+		pkIdx := util2.FindPrimaryIndex(tblInfo)
 		pkCols = pkIdx.Columns
 		handleLen = len(pkIdx.Columns)
 	}
@@ -504,7 +507,7 @@ func buildHandleColsForExec(sctx *stmtctx.StatementContext, tblInfo *model.Table
 			ID:      c.ID,
 		}
 	}
-	pkIdx := tables.FindPrimaryIndex(tblInfo)
+	pkIdx := util2.FindPrimaryIndex(tblInfo)
 	for i, c := range pkIdx.Columns {
 		tblCols[c.Offset].Index = len(idxInfo.Columns) + i
 	}
@@ -1867,7 +1870,7 @@ func (b *executorBuilder) buildUnionAll(v *plannercore.PhysicalUnionAll) Executo
 
 func buildHandleColsForSplit(sc *stmtctx.StatementContext, tbInfo *model.TableInfo) plannercore.HandleCols {
 	if tbInfo.IsCommonHandle {
-		primaryIdx := tables.FindPrimaryIndex(tbInfo)
+		primaryIdx := util2.FindPrimaryIndex(tbInfo)
 		tableCols := make([]*expression.Column, len(tbInfo.Columns))
 		for i, col := range tbInfo.Columns {
 			tableCols[i] = &expression.Column{
@@ -3411,7 +3414,7 @@ func buildNoRangeIndexLookUpReader(b *executorBuilder, v *plannercore.PhysicalIn
 			e.handleIdx = append(e.handleIdx, handleCol.Index)
 		}
 		e.handleCols = v.CommonHandleCols
-		e.primaryKeyIndex = tables.FindPrimaryIndex(tbl.Meta())
+		e.primaryKeyIndex = util2.FindPrimaryIndex(tbl.Meta())
 	}
 	return e, nil
 }
@@ -3553,7 +3556,7 @@ func (b *executorBuilder) buildIndexMergeReader(v *plannercore.PhysicalIndexMerg
 			ret.ranges = append(ret.ranges, v.PartialPlans[i][0].(*plannercore.PhysicalTableScan).Ranges)
 			if ret.table.Meta().IsCommonHandle {
 				tblInfo := ret.table.Meta()
-				sctx.IndexNames = append(sctx.IndexNames, tblInfo.Name.O+":"+tables.FindPrimaryIndex(tblInfo).Name.O)
+				sctx.IndexNames = append(sctx.IndexNames, tblInfo.Name.O+":"+util2.FindPrimaryIndex(tblInfo).Name.O)
 			}
 		}
 	}
@@ -3798,7 +3801,7 @@ func (h kvRangeBuilderFromRangeAndPartition) buildKeyRangeSeparately(ranges []*r
 	for _, p := range h.partitions {
 		pid := p.GetPhysicalID()
 		meta := p.Meta()
-		kvRange, err := distsql.TableHandleRangesToKVRanges(h.sctx.GetSessionVars().StmtCtx, []int64{pid}, meta != nil && meta.IsCommonHandle, ranges, nil)
+		kvRange, err := request.TableHandleRangesToKVRanges(h.sctx.GetSessionVars().StmtCtx, []int64{pid}, meta != nil && meta.IsCommonHandle, ranges, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -3813,7 +3816,7 @@ func (h kvRangeBuilderFromRangeAndPartition) buildKeyRange(_ int64, ranges []*ra
 	for _, p := range h.partitions {
 		pid := p.GetPhysicalID()
 		meta := p.Meta()
-		kvRange, err := distsql.TableHandleRangesToKVRanges(h.sctx.GetSessionVars().StmtCtx, []int64{pid}, meta != nil && meta.IsCommonHandle, ranges, nil)
+		kvRange, err := request.TableHandleRangesToKVRanges(h.sctx.GetSessionVars().StmtCtx, []int64{pid}, meta != nil && meta.IsCommonHandle, ranges, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -4066,9 +4069,9 @@ func buildKvRangesForIndexJoin(ctx sessionctx.Context, tableID, indexID int64, l
 			var tmpKvRanges []kv.KeyRange
 			var err error
 			if indexID == -1 {
-				tmpKvRanges, err = distsql.CommonHandleRangesToKVRanges(sc, []int64{tableID}, ranges)
+				tmpKvRanges, err = request.CommonHandleRangesToKVRanges(sc, []int64{tableID}, ranges)
 			} else {
-				tmpKvRanges, err = distsql.IndexRangesToKVRangesWithInterruptSignal(sc, tableID, indexID, ranges, nil, memTracker, interruptSignal)
+				tmpKvRanges, err = request.IndexRangesToKVRangesWithInterruptSignal(sc, tableID, indexID, ranges, nil, memTracker, interruptSignal)
 			}
 			if err != nil {
 				return nil, err
@@ -4109,9 +4112,9 @@ func buildKvRangesForIndexJoin(ctx sessionctx.Context, tableID, indexID int64, l
 	}
 	// Index id is -1 means it's a common handle.
 	if indexID == -1 {
-		return distsql.CommonHandleRangesToKVRanges(ctx.GetSessionVars().StmtCtx, []int64{tableID}, tmpDatumRanges)
+		return request.CommonHandleRangesToKVRanges(ctx.GetSessionVars().StmtCtx, []int64{tableID}, tmpDatumRanges)
 	}
-	return distsql.IndexRangesToKVRangesWithInterruptSignal(ctx.GetSessionVars().StmtCtx, tableID, indexID, tmpDatumRanges, nil, memTracker, interruptSignal)
+	return request.IndexRangesToKVRangesWithInterruptSignal(ctx.GetSessionVars().StmtCtx, tableID, indexID, tmpDatumRanges, nil, memTracker, interruptSignal)
 }
 
 func (b *executorBuilder) buildWindow(v *plannercore.PhysicalWindow) Executor {

@@ -21,7 +21,8 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/table"
-	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/context"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 )
@@ -48,13 +49,13 @@ func (t *TableKVDecoder) EncodeHandleKey(tableID int64, h kv.Handle) kv.Key {
 }
 
 func (t *TableKVDecoder) DecodeHandleFromIndex(indexInfo *model.IndexInfo, key []byte, value []byte) (kv.Handle, error) {
-	cols := tables.BuildRowcodecColInfoForIndexColumns(indexInfo, t.tbl.Meta())
+	cols := util.BuildRowcodecColInfoForIndexColumns(indexInfo, t.tbl.Meta())
 	return tablecodec.DecodeIndexHandle(key, value, len(cols))
 }
 
 // DecodeRawRowData decodes raw row data into a datum slice and a (columnID:columnValue) map.
 func (t *TableKVDecoder) DecodeRawRowData(h kv.Handle, value []byte) ([]types.Datum, map[int64]types.Datum, error) {
-	return tables.DecodeRawRowData(t.se, t.tbl.Meta(), h, t.tbl.Cols(), value)
+	return util.DecodeRawRowData(t.se, t.tbl.Meta(), h, t.tbl.Cols(), value)
 }
 
 func (t *TableKVDecoder) DecodeRawRowDataAsStr(h kv.Handle, value []byte) (res string) {
@@ -115,8 +116,8 @@ func NewTableKVDecoder(tbl table.Table, tableName string, options *SessionOption
 	se := newSession(options)
 	cols := tbl.Cols()
 	// Set CommonAddRecordCtx to session to reuse the slices and BufStore in AddRecord
-	recordCtx := tables.NewCommonAddRecordCtx(len(cols))
-	tables.SetAddRecordCtx(se, recordCtx)
+	recordCtx := context.NewCommonAddRecordCtx(len(cols))
+	context.SetAddRecordCtx(se, recordCtx)
 
 	genCols, err := collectGeneratedColumns(se, tbl.Meta(), cols)
 	if err != nil {

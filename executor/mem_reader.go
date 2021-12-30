@@ -16,6 +16,7 @@ package executor
 
 import (
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/distsql"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/kv"
@@ -26,6 +27,7 @@ import (
 	transaction "github.com/pingcap/tidb/store/driver/txn"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
@@ -82,7 +84,7 @@ func (m *memIndexReader) getMemRows() ([][]types.Datum, error) {
 			}
 		}
 	case m.table.IsCommonHandle:
-		pkIdx := tables.FindPrimaryIndex(m.table)
+		pkIdx := util.FindPrimaryIndex(m.table)
 		for _, pkCol := range pkIdx.Columns {
 			colInfo := m.table.Columns[pkCol.Offset]
 			tps = append(tps, &colInfo.FieldType)
@@ -122,7 +124,7 @@ func (m *memIndexReader) decodeIndexKeyValue(key, value []byte, tps []*types.Fie
 	if mysql.HasUnsignedFlag(tps[len(tps)-1].Flag) {
 		hdStatus = tablecodec.HandleIsUnsigned
 	}
-	colInfos := tables.BuildRowcodecColInfoForIndexColumns(m.index, m.table)
+	colInfos := util.BuildRowcodecColInfoForIndexColumns(m.index, m.table)
 	colInfos = tables.TryAppendCommonHandleRowcodecColInfos(colInfos, m.table)
 	values, err := tablecodec.DecodeIndexKV(key, value, len(m.index.Columns), hdStatus, colInfos)
 	if err != nil {

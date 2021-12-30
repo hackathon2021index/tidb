@@ -20,9 +20,10 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/worker"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utilmath"
 	"github.com/pingcap/tidb/types"
 )
 
@@ -213,7 +214,7 @@ func (parser *CSVParser) peekBytes(cnt int) ([]byte, error) {
 	if len(parser.buf) == 0 {
 		return nil, io.EOF
 	}
-	cnt = utils.MinInt(cnt, len(parser.buf))
+	cnt = utilmath.MinInt(cnt, len(parser.buf))
 	return parser.buf[:cnt], nil
 }
 

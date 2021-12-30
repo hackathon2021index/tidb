@@ -10,7 +10,9 @@ import (
 	backuppb "github.com/pingcap/kvproto/pkg/brpb"
 	"github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
+
 	"github.com/pingcap/tidb/br/pkg/restore"
+	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/util/codec"
 )
@@ -177,12 +179,12 @@ func (s *testRestoreUtilSuite) TestPaginateScanRegion(c *C) {
 		Id: 1,
 	}
 
-	makeRegions := func(num uint64) (map[uint64]*restore.RegionInfo, []*restore.RegionInfo) {
-		regionsMap := make(map[uint64]*restore.RegionInfo, num)
-		regions := make([]*restore.RegionInfo, 0, num)
+	makeRegions := func(num uint64) (map[uint64]*split.RegionInfo, []*split.RegionInfo) {
+		regionsMap := make(map[uint64]*split.RegionInfo, num)
+		regions := make([]*split.RegionInfo, 0, num)
 		endKey := make([]byte, 8)
 		for i := uint64(0); i < num-1; i++ {
-			ri := &restore.RegionInfo{
+			ri := &split.RegionInfo{
 				Region: &metapb.Region{
 					Id:    i + 1,
 					Peers: peers,
@@ -207,7 +209,7 @@ func (s *testRestoreUtilSuite) TestPaginateScanRegion(c *C) {
 		} else {
 			endKey = codec.EncodeBytes([]byte{}, endKey)
 		}
-		ri := &restore.RegionInfo{
+		ri := &split.RegionInfo{
 			Region: &metapb.Region{
 				Id:       num,
 				Peers:    peers,
@@ -222,53 +224,53 @@ func (s *testRestoreUtilSuite) TestPaginateScanRegion(c *C) {
 	}
 
 	ctx := context.Background()
-	regionMap := make(map[uint64]*restore.RegionInfo)
-	regions := []*restore.RegionInfo{}
-	batch, err := restore.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
+	regionMap := make(map[uint64]*split.RegionInfo)
+	regions := []*split.RegionInfo{}
+	batch, err := split.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
 	c.Assert(err, ErrorMatches, ".*scan region return empty result.*")
 
 	regionMap, regions = makeRegions(1)
-	batch, err = restore.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
+	batch, err = split.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
 	c.Assert(err, IsNil)
 	c.Assert(batch, DeepEquals, regions)
 
 	regionMap, regions = makeRegions(2)
-	batch, err = restore.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
+	batch, err = split.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
 	c.Assert(err, IsNil)
 	c.Assert(batch, DeepEquals, regions)
 
 	regionMap, regions = makeRegions(3)
-	batch, err = restore.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
+	batch, err = split.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
 	c.Assert(err, IsNil)
 	c.Assert(batch, DeepEquals, regions)
 
 	regionMap, regions = makeRegions(8)
-	batch, err = restore.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
+	batch, err = split.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{}, []byte{}, 3)
 	c.Assert(err, IsNil)
 	c.Assert(batch, DeepEquals, regions)
 
 	regionMap, regions = makeRegions(8)
-	batch, err = restore.PaginateScanRegion(
+	batch, err = split.PaginateScanRegion(
 		ctx, NewTestClient(stores, regionMap, 0), regions[1].Region.StartKey, []byte{}, 3)
 	c.Assert(err, IsNil)
 	c.Assert(batch, DeepEquals, regions[1:])
 
-	batch, err = restore.PaginateScanRegion(
+	batch, err = split.PaginateScanRegion(
 		ctx, NewTestClient(stores, regionMap, 0), []byte{}, regions[6].Region.EndKey, 3)
 	c.Assert(err, IsNil)
 	c.Assert(batch, DeepEquals, regions[:7])
 
-	batch, err = restore.PaginateScanRegion(
+	batch, err = split.PaginateScanRegion(
 		ctx, NewTestClient(stores, regionMap, 0), regions[1].Region.StartKey, regions[1].Region.EndKey, 3)
 	c.Assert(err, IsNil)
 	c.Assert(batch, DeepEquals, regions[1:2])
 
-	_, err = restore.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{2}, []byte{1}, 3)
+	_, err = split.PaginateScanRegion(ctx, NewTestClient(stores, regionMap, 0), []byte{2}, []byte{1}, 3)
 	c.Assert(err, ErrorMatches, ".*startKey >= endKey.*")
 
 	// make the regionMap losing some region, this will cause scan region check fails
 	delete(regionMap, uint64(3))
-	_, err = restore.PaginateScanRegion(
+	_, err = split.PaginateScanRegion(
 		ctx, NewTestClient(stores, regionMap, 0), regions[1].Region.EndKey, regions[5].Region.EndKey, 3)
 	c.Assert(err, ErrorMatches, ".*region endKey not equal to next region startKey.*")
 

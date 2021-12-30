@@ -28,7 +28,11 @@ import (
 
 	"github.com/cznic/mathutil"
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tipb/go-tipb"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/distsql"
+	"github.com/pingcap/tidb/distsql/request"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/charset"
@@ -50,8 +54,6 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/memory"
 	"github.com/pingcap/tidb/util/ranger"
-	"github.com/pingcap/tipb/go-tipb"
-	"go.uber.org/zap"
 )
 
 var (
@@ -224,9 +226,9 @@ func (e *IndexReaderExecutor) Next(ctx context.Context, req *chunk.Chunk) error 
 
 func (e *IndexReaderExecutor) buildKeyRanges(sc *stmtctx.StatementContext, ranges []*ranger.Range, physicalID int64) ([]kv.KeyRange, error) {
 	if e.index.ID == -1 {
-		return distsql.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, ranges)
+		return request.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, ranges)
 	}
-	return distsql.IndexRangesToKVRanges(sc, physicalID, e.index.ID, ranges, e.feedback)
+	return request.IndexRangesToKVRanges(sc, physicalID, e.index.ID, ranges, e.feedback)
 }
 
 // Open implements the Executor Open interface.
@@ -434,9 +436,9 @@ func (e *IndexLookUpExecutor) buildTableKeyRanges() (err error) {
 			}
 			var kvRange []kv.KeyRange
 			if e.index.ID == -1 {
-				kvRange, err = distsql.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, ranges)
+				kvRange, err = request.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, ranges)
 			} else {
-				kvRange, err = distsql.IndexRangesToKVRanges(sc, physicalID, e.index.ID, ranges, e.feedback)
+				kvRange, err = request.IndexRangesToKVRanges(sc, physicalID, e.index.ID, ranges, e.feedback)
 			}
 			if err != nil {
 				return err
@@ -446,9 +448,9 @@ func (e *IndexLookUpExecutor) buildTableKeyRanges() (err error) {
 	} else {
 		physicalID := getPhysicalTableID(e.table)
 		if e.index.ID == -1 {
-			e.kvRanges, err = distsql.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, e.ranges)
+			e.kvRanges, err = request.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, e.ranges)
 		} else {
-			e.kvRanges, err = distsql.IndexRangesToKVRanges(sc, physicalID, e.index.ID, e.ranges, e.feedback)
+			e.kvRanges, err = request.IndexRangesToKVRanges(sc, physicalID, e.index.ID, e.ranges, e.feedback)
 		}
 	}
 	return err
