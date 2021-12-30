@@ -59,7 +59,7 @@ import (
 	"github.com/pingcap/tidb/store/helper"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
-	util2 "github.com/pingcap/tidb/table/tables/util"
+	tablesutil "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util"
@@ -176,7 +176,7 @@ func (t *tikvHandlerTool) getHandle(tb table.PhysicalTable, params map[string]st
 		handle = kv.IntHandle(intHandle)
 	} else {
 		tblInfo := tb.Meta()
-		pkIdx := util2.FindPrimaryIndex(tblInfo)
+		pkIdx := tablesutil.FindPrimaryIndex(tblInfo)
 		if pkIdx == nil || !tblInfo.IsCommonHandle {
 			return nil, errors.BadRequestf("Clustered common handle not found.")
 		}

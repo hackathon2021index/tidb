@@ -51,7 +51,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
-	util2 "github.com/pingcap/tidb/table/tables/util"
+	tableutil "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/types"
 	driver "github.com/pingcap/tidb/types/parser_driver"
 	"github.com/pingcap/tidb/util"
@@ -1637,7 +1637,7 @@ func buildTableInfo(
 	if tbInfo.IsCommonHandle {
 		// Ensure tblInfo's each non-unique secondary-index's len + primary-key's len <= MaxIndexLength for clustered index table.
 		var pkLen, idxLen int
-		pkLen, err = indexColumnsLen(tbInfo.Columns, util2.FindPrimaryIndex(tbInfo).Columns)
+		pkLen, err = indexColumnsLen(tbInfo.Columns, tableutil.FindPrimaryIndex(tbInfo).Columns)
 		if err != nil {
 			return
 		}
@@ -4282,7 +4282,7 @@ func checkColumnWithIndexConstraint(tbInfo *model.TableInfo, originalCol, newCol
 		break
 	}
 
-	pkIndex := util2.FindPrimaryIndex(tbInfo)
+	pkIndex := tableutil.FindPrimaryIndex(tbInfo)
 	var clusteredPkLen int
 	if tbInfo.IsCommonHandle {
 		var err error
@@ -5464,7 +5464,7 @@ func (d *ddl) CreateIndex(ctx sessionctx.Context, ti ast.Ident, keyType ast.Inde
 	if !unique && tblInfo.IsCommonHandle {
 		// Ensure new created non-unique secondary-index's len + primary-key's len <= MaxIndexLength in clustered index table.
 		var pkLen, idxLen int
-		pkLen, err = indexColumnsLen(tblInfo.Columns, util2.FindPrimaryIndex(tblInfo).Columns)
+		pkLen, err = indexColumnsLen(tblInfo.Columns, tableutil.FindPrimaryIndex(tblInfo).Columns)
 		if err != nil {
 			return err
 		}

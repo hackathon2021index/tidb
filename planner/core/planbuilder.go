@@ -48,7 +48,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/table"
-	util3 "github.com/pingcap/tidb/table/tables/util"
+	tablesutil "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/table/temptable"
 	"github.com/pingcap/tidb/types"
 	driver "github.com/pingcap/tidb/types/parser_driver"
@@ -1524,7 +1524,7 @@ func tryGetCommonHandleCols(t table.Table, allColSchema *expression.Schema) ([]*
 	if !tblInfo.IsCommonHandle {
 		return nil, nil, false
 	}
-	pk := util3.FindPrimaryIndex(tblInfo)
+	pk := tablesutil.FindPrimaryIndex(tblInfo)
 	commonHandleCols, _ := expression.IndexInfo2Cols(tblInfo.Columns, allColSchema.Columns, pk)
 	commonHandelColInfos := tables.TryGetCommonPkColumns(t)
 	return commonHandelColInfos, commonHandleCols, true
@@ -1738,7 +1738,7 @@ func BuildHandleColsForAnalyze(ctx sessionctx.Context, tblInfo *model.TableInfo,
 			Index:   index,
 		}}
 	case tblInfo.IsCommonHandle:
-		pkIdx := util3.FindPrimaryIndex(tblInfo)
+		pkIdx := tablesutil.FindPrimaryIndex(tblInfo)
 		pkColLen := len(pkIdx.Columns)
 		columns := make([]*expression.Column, pkColLen)
 		for i := 0; i < pkColLen; i++ {
@@ -3715,7 +3715,7 @@ func buildHandleColumnInfos(tblInfo *model.TableInfo) []*model.ColumnInfo {
 			return []*model.ColumnInfo{col}
 		}
 	case tblInfo.IsCommonHandle:
-		pkIdx := util3.FindPrimaryIndex(tblInfo)
+		pkIdx := tablesutil.FindPrimaryIndex(tblInfo)
 		pkCols := make([]*model.ColumnInfo, 0, len(pkIdx.Columns))
 		cols := tblInfo.Columns
 		for _, idxCol := range pkIdx.Columns {

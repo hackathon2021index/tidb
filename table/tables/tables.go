@@ -43,8 +43,8 @@ import (
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/table"
-	context2 "github.com/pingcap/tidb/table/tables/context"
-	util2 "github.com/pingcap/tidb/table/tables/util"
+	tablecontext "github.com/pingcap/tidb/table/tables/context"
+	tablesutil "github.com/pingcap/tidb/table/tables/util"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util"
@@ -515,7 +515,7 @@ func adjustRowValuesBuf(writeBufs *variable.WriteStmtBufs, rowLen int) {
 
 // ClearAddRecordCtx remove `CommonAddRecordCtx` from session context
 func ClearAddRecordCtx(ctx sessionctx.Context) {
-	ctx.ClearValue(context2.AddRecordCtxKey)
+	ctx.ClearValue(tablecontext.AddRecordCtxKey)
 }
 
 // TryGetCommonPkColumnIds get the IDs of primary key column if the table has common handle.
@@ -523,7 +523,7 @@ func TryGetCommonPkColumnIds(tbl *model.TableInfo) []int64 {
 	if !tbl.IsCommonHandle {
 		return nil
 	}
-	pkIdx := util2.FindPrimaryIndex(tbl)
+	pkIdx := tablesutil.FindPrimaryIndex(tbl)
 	pkColIds := make([]int64, 0, len(pkIdx.Columns))
 	for _, idxCol := range pkIdx.Columns {
 		pkColIds = append(pkColIds, tbl.Columns[idxCol.Offset].ID)
@@ -551,7 +551,7 @@ func TryGetCommonPkColumns(tbl table.Table) []*table.Column {
 	if !tbl.Meta().IsCommonHandle {
 		return nil
 	}
-	pkIdx := util2.FindPrimaryIndex(tbl.Meta())
+	pkIdx := tablesutil.FindPrimaryIndex(tbl.Meta())
 	cols := tbl.Cols()
 	pkCols := make([]*table.Column, 0, len(pkIdx.Columns))
 	for _, idxCol := range pkIdx.Columns {
@@ -637,7 +637,7 @@ func (t *TableCommon) AddRecord(sctx sessionctx.Context, r []types.Datum, opts .
 			recordID = kv.IntHandle(r[tblInfo.GetPkColInfo().Offset].GetInt64())
 			hasRecordID = true
 		} else if tblInfo.IsCommonHandle {
-			pkIdx := util2.FindPrimaryIndex(tblInfo)
+			pkIdx := tablesutil.FindPrimaryIndex(tblInfo)
 			pkDts := make([]types.Datum, 0, len(pkIdx.Columns))
 			for _, idxCol := range pkIdx.Columns {
 				pkDts = append(pkDts, r[idxCol.Offset])
@@ -676,7 +676,7 @@ func (t *TableCommon) AddRecord(sctx sessionctx.Context, r []types.Datum, opts .
 
 	var colIDs, binlogColIDs []int64
 	var row, binlogRow []types.Datum
-	if recordCtx, ok := sctx.Value(context2.AddRecordCtxKey).(*context2.CommonAddRecordCtx); ok {
+	if recordCtx, ok := sctx.Value(tablecontext.AddRecordCtxKey).(*tablecontext.CommonAddRecordCtx); ok {
 		colIDs = recordCtx.ColIDs[:0]
 		row = recordCtx.Row[:0]
 	} else {
@@ -888,7 +888,7 @@ func RowWithCols(t table.Table, ctx sessionctx.Context, h kv.Handle, cols []*tab
 	if err != nil {
 		return nil, err
 	}
-	v, _, err := util2.DecodeRawRowData(ctx, t.Meta(), h, cols, value)
+	v, _, err := tablesutil.DecodeRawRowData(ctx, t.Meta(), h, cols, value)
 	if err != nil {
 		return nil, err
 	}
@@ -1168,7 +1168,7 @@ func IterRecords(t table.Table, ctx sessionctx.Context, cols []*table.Column,
 				data[col.Offset] = rowMap[col.ID]
 				continue
 			}
-			data[col.Offset], err = util2.GetColDefaultValue(ctx, col, defaultVals)
+			data[col.Offset], err = tablesutil.GetColDefaultValue(ctx, col, defaultVals)
 			if err != nil {
 				return err
 			}
@@ -1325,7 +1325,7 @@ func CanSkip(info *model.TableInfo, col *table.Column, value *types.Datum) bool 
 		return true
 	}
 	if col.IsCommonHandleColumn(info) {
-		pkIdx := util2.FindPrimaryIndex(info)
+		pkIdx := tablesutil.FindPrimaryIndex(info)
 		for _, idxCol := range pkIdx.Columns {
 			if info.Columns[idxCol.Offset].ID != col.ID {
 				continue
@@ -1591,7 +1591,7 @@ func TryGetHandleRestoredDataWrapper(t table.Table, row []types.Datum, rowMap ma
 		return nil
 	}
 	rsData := make([]types.Datum, 0, 4)
-	pkIdx := util2.FindPrimaryIndex(t.Meta())
+	pkIdx := tablesutil.FindPrimaryIndex(t.Meta())
 	for _, pkIdxCol := range pkIdx.Columns {
 		pkCol := t.Meta().Columns[pkIdxCol.Offset]
 		if !types.NeedRestoredData(&pkCol.FieldType) {
