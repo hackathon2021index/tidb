@@ -43,8 +43,8 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/br/pkg/restore/split"
-	"github.com/pingcap/tidb/br/pkg/utils"
-	"github.com/pingcap/tidb/distsql"
+	"github.com/pingcap/tidb/br/pkg/utils/utilpool"
+	"github.com/pingcap/tidb/distsql/request"
 	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/table"
@@ -73,7 +73,7 @@ type DuplicateManager struct {
 	tls               *common.TLS
 	ts                uint64
 	keyAdapter        KeyAdapter
-	remoteWorkerPool  *utils.WorkerPool
+	remoteWorkerPool  *utilpool.WorkerPool
 	opts              *kv.SessionOptions
 }
 
@@ -196,7 +196,7 @@ func NewDuplicateManager(local *local, ts uint64, opts *kv.SessionOptions) (*Dup
 		ts:                ts,
 		connPool:          common.NewGRPCConns(),
 		// TODO: not sure what is the correct concurrency value.
-		remoteWorkerPool: utils.NewWorkerPool(uint(local.tcpConcurrency), "duplicates"),
+		remoteWorkerPool: utilpool.NewWorkerPool(uint(local.tcpConcurrency), "duplicates"),
 		opts:             opts,
 	}, nil
 }
@@ -474,7 +474,7 @@ func (manager *DuplicateManager) CollectDuplicateRowsFromLocalIndex(
 		if tbl.Meta().IsCommonHandle {
 			ranges = ranger.FullRange()
 		}
-		keyRanges, err := distsql.TableHandleRangesToKVRanges(nil, tableIDs, tbl.Meta().IsCommonHandle, ranges, nil)
+		keyRanges, err := request.TableHandleRangesToKVRanges(nil, tableIDs, tbl.Meta().IsCommonHandle, ranges, nil)
 		if err != nil {
 			return false, errors.Trace(err)
 		}
@@ -542,7 +542,7 @@ func (manager *DuplicateManager) CollectDuplicateRowsFromLocalIndex(
 		ranges := ranger.FullRange()
 		var keysRanges []tidbkv.KeyRange
 		for _, id := range tableIDs {
-			partitionKeysRanges, err := distsql.IndexRangesToKVRanges(nil, id, indexInfo.ID, ranges, nil)
+			partitionKeysRanges, err := request.IndexRangesToKVRanges(nil, id, indexInfo.ID, ranges, nil)
 			if err != nil {
 				return false, err
 			}
@@ -788,7 +788,7 @@ func buildTableRequests(tableID int64, isCommonHandle bool) ([]*DuplicateRequest
 	if isCommonHandle {
 		ranges = ranger.FullRange()
 	}
-	keysRanges, err := distsql.TableHandleRangesToKVRanges(nil, []int64{tableID}, isCommonHandle, ranges, nil)
+	keysRanges, err := request.TableHandleRangesToKVRanges(nil, []int64{tableID}, isCommonHandle, ranges, nil)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -807,7 +807,7 @@ func buildTableRequests(tableID int64, isCommonHandle bool) ([]*DuplicateRequest
 
 func buildIndexRequests(tableID int64, indexInfo *model.IndexInfo) ([]*DuplicateRequest, error) {
 	ranges := ranger.FullRange()
-	keysRanges, err := distsql.IndexRangesToKVRanges(nil, tableID, indexInfo.ID, ranges, nil)
+	keysRanges, err := request.IndexRangesToKVRanges(nil, tableID, indexInfo.ID, ranges, nil)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}

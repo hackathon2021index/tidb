@@ -17,6 +17,10 @@ package distsql
 import (
 	"testing"
 
+	"github.com/pingcap/tipb/go-tipb"
+	"github.com/stretchr/testify/require"
+
+	"github.com/pingcap/tidb/distsql/request"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
@@ -28,8 +32,6 @@ import (
 	"github.com/pingcap/tidb/util/codec"
 	"github.com/pingcap/tidb/util/memory"
 	"github.com/pingcap/tidb/util/ranger"
-	"github.com/pingcap/tipb/go-tipb"
-	"github.com/stretchr/testify/require"
 )
 
 type handleRange struct {
@@ -100,7 +102,7 @@ func TestTableRangesToKVRanges(t *testing.T) {
 		},
 	}
 
-	actual := TableRangesToKVRanges(13, ranges, nil)
+	actual := request.TableRangesToKVRanges(13, ranges, nil)
 	expect := []kv.KeyRange{
 		{
 			StartKey: kv.Key{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xd, 0x5f, 0x72, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1},
@@ -181,7 +183,7 @@ func TestIndexRangesToKVRanges(t *testing.T) {
 		},
 	}
 
-	actual, err := IndexRangesToKVRanges(new(stmtctx.StatementContext), 12, 15, ranges, nil)
+	actual, err := request.IndexRangesToKVRanges(new(stmtctx.StatementContext), 12, 15, ranges, nil)
 	require.NoError(t, err)
 	for i := range actual {
 		require.Equal(t, expect[i], actual[i])
@@ -590,7 +592,7 @@ func TestTableRangesToKVRangesWithFbs(t *testing.T) {
 		},
 	}
 	fb := newTestFb()
-	actual := TableRangesToKVRanges(0, ranges, fb)
+	actual := request.TableRangesToKVRanges(0, ranges, fb)
 	expect := []kv.KeyRange{
 		{
 			StartKey: kv.Key{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x5f, 0x72, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1},
@@ -612,7 +614,7 @@ func TestIndexRangesToKVRangesWithFbs(t *testing.T) {
 		},
 	}
 	fb := newTestFb()
-	actual, err := IndexRangesToKVRanges(new(stmtctx.StatementContext), 0, 0, ranges, fb)
+	actual, err := request.IndexRangesToKVRanges(new(stmtctx.StatementContext), 0, 0, ranges, fb)
 	require.NoError(t, err)
 	expect := []kv.KeyRange{
 		{

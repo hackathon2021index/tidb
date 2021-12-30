@@ -19,7 +19,7 @@ import (
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
 
-	"github.com/pingcap/tidb/br/pkg/conn"
+	"github.com/pingcap/tidb/br/pkg/conn/util"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/br/pkg/restore/split"
@@ -230,7 +230,7 @@ func NewFileImporter(
 
 // CheckMultiIngestSupport checks whether all stores support multi-ingest
 func (importer *FileImporter) CheckMultiIngestSupport(ctx context.Context, pdClient pd.Client) error {
-	allStores, err := conn.GetAllTiKVStores(ctx, pdClient, conn.SkipTiFlash)
+	allStores, err := util.GetAllTiKVStores(ctx, pdClient, util.SkipTiFlash)
 	if err != nil {
 		return errors.Trace(err)
 	}

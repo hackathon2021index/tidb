@@ -26,7 +26,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/kv"
 	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utilpool"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/parser/model"
@@ -663,7 +663,7 @@ func (l *LogClient) restoreTables(ctx context.Context, dom *domain.Domain) error
 	// 		a. encode row changed files to kvpairs and ingest into tikv
 	// 		b. exec ddl
 	log.Debug("start restore tables")
-	workerPool := utils.NewWorkerPool(l.concurrencyCfg.Concurrency, "table log restore")
+	workerPool := utilpool.NewWorkerPool(l.concurrencyCfg.Concurrency, "table log restore")
 	eg, ectx := errgroup.WithContext(ctx)
 	for tableID, puller := range l.eventPullers {
 		pullerReplica := puller

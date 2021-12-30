@@ -32,7 +32,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/pingcap/tidb/br/pkg/checksum"
-	"github.com/pingcap/tidb/br/pkg/conn"
+	"github.com/pingcap/tidb/br/pkg/conn/util"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
 	"github.com/pingcap/tidb/br/pkg/glue"
 	"github.com/pingcap/tidb/br/pkg/logutil"
@@ -44,6 +44,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/summary"
 	"github.com/pingcap/tidb/br/pkg/utils"
 	"github.com/pingcap/tidb/br/pkg/utils/utildb"
+	"github.com/pingcap/tidb/br/pkg/utils/utilpool"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
@@ -61,7 +62,7 @@ type Client struct {
 	pdClient      pd.Client
 	toolClient    split.SplitClient
 	fileImporter  FileImporter
-	workerPool    *utils.WorkerPool
+	workerPool    *utilpool.WorkerPool
 	tlsConf       *tls.Config
 	keepaliveConf keepalive.ClientParameters
 
@@ -277,7 +278,7 @@ func (rc *Client) GetFilesInRawRange(startKey []byte, endKey []byte, cf string) 
 
 // SetConcurrency sets the concurrency of dbs tables files.
 func (rc *Client) SetConcurrency(c uint) {
-	rc.workerPool = utils.NewWorkerPool(c, "file")
+	rc.workerPool = utilpool.NewWorkerPool(c, "file")
 }
 
 // EnableOnline sets the mode of restore to online.
@@ -518,7 +519,7 @@ func (rc *Client) createTablesWithDBPool(ctx context.Context,
 	createOneTable func(ctx context.Context, db *DB, t *metautil.Table) error,
 	tables []*metautil.Table, dbPool []*DB) error {
 	eg, ectx := errgroup.WithContext(ctx)
-	workers := utils.NewWorkerPool(uint(len(dbPool)), "DDL workers")
+	workers := utilpool.NewWorkerPool(uint(len(dbPool)), "DDL workers")
 	for _, t := range tables {
 		table := t
 		workers.ApplyWithIDInErrorGroup(eg, func(id uint64) error {
@@ -551,7 +552,7 @@ func (rc *Client) ExecDDLs(ctx context.Context, ddlJobs []*model.Job) error {
 
 func (rc *Client) setSpeedLimit(ctx context.Context) error {
 	if !rc.hasSpeedLimited && rc.rateLimit != 0 {
-		stores, err := conn.GetAllTiKVStores(ctx, rc.pdClient, conn.SkipTiFlash)
+		stores, err := util.GetAllTiKVStores(ctx, rc.pdClient, util.SkipTiFlash)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -741,7 +742,7 @@ func (rc *Client) SwitchToNormalMode(ctx context.Context) error {
 }
 
 func (rc *Client) switchTiKVMode(ctx context.Context, mode import_sstpb.SwitchMode) error {
-	stores, err := conn.GetAllTiKVStores(ctx, rc.pdClient, conn.SkipTiFlash)
+	stores, err := util.GetAllTiKVStores(ctx, rc.pdClient, util.SkipTiFlash)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -801,7 +802,7 @@ func (rc *Client) GoValidateChecksum(
 		defer wg.Done()
 		rc.updateMetaAndLoadStats(ctx, loadStatCh)
 	}()
-	workers := utils.NewWorkerPool(defaultChecksumConcurrency, "RestoreChecksum")
+	workers := utilpool.NewWorkerPool(defaultChecksumConcurrency, "RestoreChecksum")
 	go func() {
 		eg, ectx := errgroup.WithContext(ctx)
 		defer func() {
@@ -1142,7 +1143,7 @@ func (rc *Client) PreCheckTableTiFlashReplica(
 	ctx context.Context,
 	tables []*metautil.Table,
 ) error {
-	tiFlashStores, err := conn.GetAllTiKVStores(ctx, rc.pdClient, conn.TiFlashOnly)
+	tiFlashStores, err := util.GetAllTiKVStores(ctx, rc.pdClient, util.TiFlashOnly)
 	if err != nil {
 		return errors.Trace(err)
 	}

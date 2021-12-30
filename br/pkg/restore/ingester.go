@@ -43,7 +43,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/br/pkg/membuf"
 	"github.com/pingcap/tidb/br/pkg/restore/split"
-	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/br/pkg/utils/utilpool"
 )
 
 const (
@@ -91,7 +91,7 @@ type Ingester struct {
 	conns   gRPCConns
 
 	splitCli   split.SplitClient
-	WorkerPool *utils.WorkerPool
+	WorkerPool *utilpool.WorkerPool
 
 	batchWriteKVPairs int
 	regionSplitSize   int64
@@ -101,7 +101,7 @@ type Ingester struct {
 func NewIngester(
 	splitCli split.SplitClient, cfg concurrencyCfg, commitTS uint64, tlsConf *tls.Config,
 ) *Ingester {
-	workerPool := utils.NewWorkerPool(cfg.IngestConcurrency, "ingest worker")
+	workerPool := utilpool.NewWorkerPool(cfg.IngestConcurrency, "ingest worker")
 	return &Ingester{
 		tlsConf: tlsConf,
 		conns: gRPCConns{
