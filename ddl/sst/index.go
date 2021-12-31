@@ -28,8 +28,7 @@ func LogInfo(format string, a ...interface{}) {
 }
 
 func LogDebug(format string, a ...interface{}) {
-	// logutil.BgLogger().Debug(prefix_str+fmt.Sprintf(format, a...))
-	logutil.BgLogger().Info(prefix_str + fmt.Sprintf(format, a...))
+	logutil.BgLogger().Debug(prefix_str + fmt.Sprintf(format, a...))
 }
 
 func LogError(format string, a ...interface{}) {
@@ -160,7 +159,6 @@ func InitIndexOptimize() {
 // TODO: 1. checkpoint??
 // TODO: 2. EngineID can use startTs for only.
 func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
-	LogDebug("PrepareIndexOp %+v", ddl)
 	_, err := ec.getEngineInfo(ddl.StartTs)
 	if err == nil {
 		// has found it ;
@@ -171,6 +169,7 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	if err != ErrNotFound {
 		return err
 	}
+	LogInfo("PrepareIndexOp %+v", ddl)
 	// err == ErrNotFound
 	info := cluster
 	be, err := createLocalBackend(ctx, info)
@@ -221,7 +220,7 @@ func flushKvs(ctx context.Context, ei *engineInfo) error {
 	if len(ei.kvs) <= 0 {
 		return nil
 	}
-	LogDebug("flushKvs (%d)", len(ei.kvs))
+	LogInfo("flushKvs (%d)", len(ei.kvs))
 	lw, err := ei.getWriter()
 	if err != nil {
 		return fmt.Errorf("IndexOperator.getWriter err:%w", err)
@@ -235,7 +234,7 @@ func flushKvs(ctx context.Context, ei *engineInfo) error {
 }
 
 func FinishIndexOp(ctx context.Context, startTs uint64) error {
-	LogDebug("FinishIndexOp %d", startTs)
+	LogInfo("FinishIndexOp %d", startTs)
 	ei, err := ec.getEngineInfo(startTs)
 	if err != nil {
 		return err
