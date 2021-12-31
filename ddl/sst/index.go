@@ -21,7 +21,12 @@ import (
 	"github.com/twmb/murmur3"
 )
 
-const prefix_str = "------->"
+const (
+	prefix_str = "------->"
+	_kb        = 1024
+	_mb        = 1024 * _kb
+	flush_size = 8 * _mb
+)
 
 func LogInfo(format string, a ...interface{}) {
 	logutil.BgLogger().Info(prefix_str + fmt.Sprintf(format, a...))
@@ -64,6 +69,11 @@ type engineInfo struct {
 	ref    int32
 	kvs    []common.KvPair
 	size   int
+}
+
+func (ei *engineInfo) ResetCache() {
+	ei.kvs = ei.kvs[:0]
+	ei.size = 0
 }
 
 func (ei *engineInfo) pushKV(k, v []byte) {
@@ -209,7 +219,7 @@ func IndexOperator(ctx context.Context, startTs uint64, k, v []byte) error {
 
 	ei.pushKV(k, v)
 	kvSize := ei.size
-	if kvSize < int(config.SplitRegionSize) {
+	if kvSize < flush_size {
 		return nil
 	}
 	//
@@ -219,6 +229,10 @@ func IndexOperator(ctx context.Context, startTs uint64, k, v []byte) error {
 func flushKvs(ctx context.Context, ei *engineInfo) error {
 	if len(ei.kvs) <= 0 {
 		return nil
+	}
+	if ctx == nil {
+		// this may be nil,and used in WriteRows;
+		ctx = context.TODO()
 	}
 	LogInfo("flushKvs (%d)", len(ei.kvs))
 	lw, err := ei.getWriter()
@@ -230,6 +244,7 @@ func flushKvs(ctx context.Context, ei *engineInfo) error {
 	if err != nil {
 		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
 	}
+	ei.ResetCache()
 	return nil
 }
 
@@ -254,8 +269,7 @@ func FinishIndexOp(ctx context.Context, startTs uint64) error {
 	if err != nil {
 		return fmt.Errorf("engine.Import err:%w", err)
 	}
-	// TODO: do not comment.
-	// err = closeEngine.Cleanup(ctx)
+	err = closeEngine.Cleanup(ctx)
 	if err != nil {
 		return fmt.Errorf("engine.Cleanup err:%w", err)
 	}
