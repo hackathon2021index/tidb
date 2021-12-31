@@ -16,13 +16,13 @@ package tables
 
 import (
 	"context"
+	"github.com/pingcap/tidb/ddl/sst"
 	"io"
 	"sync"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
-
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/sessionctx"
@@ -93,6 +93,8 @@ type index struct {
 	// the collation global variable is initialized *after* `NewIndex()`.
 	initNeedRestoreData sync.Once
 	needRestoredData    bool
+	//
+	jobStartTs uint64
 }
 
 // NeedRestoredData checks whether the index columns needs restored data.
@@ -106,8 +108,13 @@ func NeedRestoredData(idxCols []*model.IndexColumn, colInfos []*model.ColumnInfo
 	return false
 }
 
-// NewIndex builds a new Index object.
 func NewIndex(physicalID int64, tblInfo *model.TableInfo, indexInfo *model.IndexInfo) table.Index {
+	// The prefix can't encode from tblInfo.ID, because table partition may change the id to partition id.
+	return NewIndex4Lightning(physicalID,tblInfo,indexInfo,0)
+}
+
+// NewIndex builds a new Index object.
+func NewIndex4Lightning(physicalID int64, tblInfo *model.TableInfo, indexInfo *model.IndexInfo, startTs uint64) table.Index {
 	// The prefix can't encode from tblInfo.ID, because table partition may change the id to partition id.
 	var prefix kv.Key
 	if indexInfo.Global {
@@ -118,10 +125,11 @@ func NewIndex(physicalID int64, tblInfo *model.TableInfo, indexInfo *model.Index
 		prefix = tablecodec.EncodeTableIndexPrefix(physicalID, indexInfo.ID)
 	}
 	index := &index{
-		idxInfo:  indexInfo,
-		tblInfo:  tblInfo,
-		prefix:   prefix,
-		phyTblID: physicalID,
+		idxInfo:    indexInfo,
+		tblInfo:    tblInfo,
+		prefix:     prefix,
+		phyTblID:   physicalID,
+		jobStartTs: startTs,
 	}
 	return index
 }
@@ -184,7 +192,11 @@ func (c *index) Create(sctx sessionctx.Context, txn kv.Transaction, indexedValue
 	if err != nil {
 		return nil, err
 	}
-
+	// TODO: optimize index ddl
+	if *sst.IndexDDLLightning && c.jobStartTs > 0{
+		err = sst.IndexOperator(ctx, c.jobStartTs, key, idxVal)
+		return nil, err
+	}
 	if !distinct || skipCheck || opt.Untouched {
 		err = txn.GetMemBuffer().Set(key, idxVal)
 		return nil, err
