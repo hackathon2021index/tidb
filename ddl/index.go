@@ -1036,7 +1036,7 @@ type addIndexWorker struct {
 }
 
 func newAddIndexWorker(sessCtx sessionctx.Context, worker *worker, id int, t table.PhysicalTable, indexInfo *model.IndexInfo, decodeColMap map[int64]decoder.Column, sqlMode mysql.SQLMode, jobStartTs uint64) *addIndexWorker {
-	index := tables.NewIndex4Lightning(t.GetPhysicalID(), t.Meta(), indexInfo,jobStartTs)
+	index := tables.NewIndex4Lightning(t.GetPhysicalID(), t.Meta(), indexInfo, jobStartTs)
 	rowDecoder := decoder.NewRowDecoder(t, t.WritableCols(), decodeColMap)
 	return &addIndexWorker{
 		baseIndexWorker: baseIndexWorker{
@@ -1295,6 +1295,62 @@ func (w *addIndexWorker) batchCheckUniqueKey(txn kv.Transaction, idxRecords []*i
 	return nil
 }
 
+func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) (taskCtx backfillTaskContext, errInTxn error) {
+	oprStartTime := time.Now()
+
+	txn, err := w.sessCtx.GetStore().Begin()
+	if err != nil {
+		return taskCtx, errors.Trace(err)
+	}
+
+	taskCtx.addedCount = 0
+	taskCtx.scanCount = 0
+	txn.SetOption(kv.Priority, w.priority)
+
+	idxRecords, nextKey, taskDone, err := w.fetchRowColVals(txn, handleRange)
+	if err != nil {
+		return taskCtx, errors.Trace(err)
+	}
+	taskCtx.nextKey = nextKey
+	taskCtx.done = taskDone
+
+	err = w.batchCheckUniqueKey(txn, idxRecords)
+	if err != nil {
+		return taskCtx, errors.Trace(err)
+	}
+
+	for _, idxRecord := range idxRecords {
+		taskCtx.scanCount++
+		// The index is already exists, we skip it, no needs to backfill it.
+		// The following update, delete, insert on these rows, TiDB can handle it correctly.
+		if idxRecord.skip {
+			continue
+		}
+
+		// TODO: check if need lock.
+		// Lock the row key to notify us that someone delete or update the row,
+		// then we should not backfill the index of it, otherwise the adding index is redundant.
+		// err := txn.LockKeys(context.Background(), new(kv.LockCtx), idxRecord.key)
+		// if err != nil {
+		// 	return taskCtx,errors.Trace(err)
+		// }
+
+		// Create the index.
+		handle, err := w.index.Create(w.sessCtx, txn, idxRecord.vals, idxRecord.handle, idxRecord.rsData)
+		if err != nil {
+			if kv.ErrKeyExists.Equal(err) && idxRecord.handle.Equal(handle) {
+				// Index already exists, skip it.
+				continue
+			}
+
+			return taskCtx, errors.Trace(err)
+		}
+		taskCtx.addedCount++
+	}
+	logSlowOperations(time.Since(oprStartTime), "AddIndexBackfillDataInTxn", 3000)
+	return taskCtx, nil
+}
+
 // BackfillDataInTxn will backfill table index in a transaction, lock corresponding rowKey, if the value of rowKey is changed,
 // indicate that index columns values may changed, index is not allowed to be added, so the txn will rollback and retry.
 // BackfillDataInTxn will add w.batchCnt indices once, default value of w.batchCnt is 128.
@@ -1305,7 +1361,9 @@ func (w *addIndexWorker) BackfillDataInTxn(handleRange reorgBackfillTask) (taskC
 			panic("panic test")
 		}
 	})
-
+	if *sst.IndexDDLLightning {
+		return w.backfillDataInTxnByRead(handleRange)
+	}
 	oprStartTime := time.Now()
 	errInTxn = kv.RunInNewTxn(context.Background(), w.sessCtx.GetStore(), true, func(ctx context.Context, txn kv.Transaction) error {
 		taskCtx.addedCount = 0

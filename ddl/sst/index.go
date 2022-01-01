@@ -58,17 +58,14 @@ type DDLInfo struct {
 	StartTs uint64
 }
 
-const (
-	indexEngineID = -1 // same to restore.table_restore.go indexEngineID
-)
-
 type engineInfo struct {
 	*backend.OpenedEngine
 	writer *backend.LocalEngineWriter
 	cfg    *backend.EngineConfig
-	ref    int32
-	kvs    []common.KvPair
-	size   int
+	// TODO: use channel later;
+	ref  int32
+	kvs  []common.KvPair
+	size int
 }
 
 func (ei *engineInfo) ResetCache() {
