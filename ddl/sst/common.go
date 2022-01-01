@@ -19,10 +19,47 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 )
 
+const (
+	prefix_str = "------->"
+	_kb        = 1024
+	_mb        = 1024 * _kb
+	flush_size = 8 * _mb
+)
+
 var (
 	limit       = int64(1024)
 	tblId int64 = time.Now().Unix()
 )
+
+func LogInfo(format string, a ...interface{}) {
+	logutil.BgLogger().Info(prefix_str + fmt.Sprintf(format, a...))
+}
+
+func LogDebug(format string, a ...interface{}) {
+	logutil.BgLogger().Debug(prefix_str + fmt.Sprintf(format, a...))
+}
+
+func LogError(format string, a ...interface{}) {
+	logutil.BgLogger().Error(prefix_str + fmt.Sprintf(format, a...))
+}
+
+func LogFatal(format string, a ...interface{}) {
+	logutil.BgLogger().Fatal(prefix_str + fmt.Sprintf(format, a...))
+}
+
+// pdaddr; tidb-host/status
+type ClusterInfo struct {
+	PdAddr string
+	// TidbHost string - 127.0.0.1
+	Port   uint
+	Status uint
+}
+
+type DDLInfo struct {
+	Schema  string
+	Table   *model.TableInfo
+	StartTs uint64
+}
 
 func genNextTblId() int64 {
 	return atomic.AddInt64(&tblId, 1)
@@ -76,7 +113,7 @@ func generateLightningConfig(info ClusterInfo) *config.Config {
 		name = "/tmp/lightning"
 	}
 	os.Remove(name)
-	LogDebug("./ %s.",name)
+	LogDebug("./ %s.", name)
 	// cfg.TikvImporter.RangeConcurrency = 32
 	cfg.Checkpoint.Enable = false
 	cfg.TikvImporter.SortedKVDir = name
