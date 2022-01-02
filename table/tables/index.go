@@ -95,6 +95,7 @@ type index struct {
 	needRestoredData    bool
 	//
 	jobStartTs uint64
+	wc         *sst.WorkerKVCache
 }
 
 // NeedRestoredData checks whether the index columns needs restored data.
@@ -110,11 +111,11 @@ func NeedRestoredData(idxCols []*model.IndexColumn, colInfos []*model.ColumnInfo
 
 func NewIndex(physicalID int64, tblInfo *model.TableInfo, indexInfo *model.IndexInfo) table.Index {
 	// The prefix can't encode from tblInfo.ID, because table partition may change the id to partition id.
-	return NewIndex4Lightning(physicalID,tblInfo,indexInfo,0)
+	return NewIndex4Lightning(physicalID, tblInfo, indexInfo, 0, nil)
 }
 
 // NewIndex builds a new Index object.
-func NewIndex4Lightning(physicalID int64, tblInfo *model.TableInfo, indexInfo *model.IndexInfo, startTs uint64) table.Index {
+func NewIndex4Lightning(physicalID int64, tblInfo *model.TableInfo, indexInfo *model.IndexInfo, startTs uint64, cache *sst.WorkerKVCache) table.Index {
 	// The prefix can't encode from tblInfo.ID, because table partition may change the id to partition id.
 	var prefix kv.Key
 	if indexInfo.Global {
@@ -130,6 +131,7 @@ func NewIndex4Lightning(physicalID int64, tblInfo *model.TableInfo, indexInfo *m
 		prefix:     prefix,
 		phyTblID:   physicalID,
 		jobStartTs: startTs,
+		wc:         cache,
 	}
 	return index
 }
@@ -193,9 +195,10 @@ func (c *index) Create(sctx sessionctx.Context, txn kv.Transaction, indexedValue
 		return nil, err
 	}
 	// TODO: optimize index ddl
-	if *sst.IndexDDLLightning && c.jobStartTs > 0{
-		err = sst.IndexOperator(ctx, c.jobStartTs, key, idxVal)
-		return nil, err
+	if *sst.IndexDDLLightning && c.jobStartTs > 0 {
+		// err = sst.IndexOperator(ctx, c.jobStartTs, key, idxVal)
+		c.wc.PushKeyValue(key, idxVal)
+		return nil, nil
 	}
 	if !distinct || skipCheck || opt.Untouched {
 		err = txn.GetMemBuffer().Set(key, idxVal)

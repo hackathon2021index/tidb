@@ -131,5 +131,6 @@ func createLocalBackend(ctx context.Context, info ClusterInfo) (backend.Backend,
 		return backend.Backend{}, err
 	}
 	var g glue_
+	_ = glue.NewExternalTiDBGlue(nil, 0)
 	return local.NewLocalBackend(ctx, tls, cfg, &g, int(limit), nil)
 }

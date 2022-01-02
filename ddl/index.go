@@ -15,6 +15,7 @@
 package ddl
 
 import (
+	"bytes"
 	"context"
 	"github.com/pingcap/tidb/ddl/sst"
 	"strings"
@@ -1033,11 +1034,15 @@ type addIndexWorker struct {
 	idxKeyBufs         [][]byte
 	batchCheckKeys     []kv.Key
 	distinctCheckFlags []bool
+	wc                 *sst.WorkerKVCache
+	jobStartTs         uint64
 }
 
 func newAddIndexWorker(sessCtx sessionctx.Context, worker *worker, id int, t table.PhysicalTable, indexInfo *model.IndexInfo, decodeColMap map[int64]decoder.Column, sqlMode mysql.SQLMode, jobStartTs uint64) *addIndexWorker {
-	index := tables.NewIndex4Lightning(t.GetPhysicalID(), t.Meta(), indexInfo, jobStartTs)
+	wc := sst.NewWorkerKVCache()
+	index := tables.NewIndex4Lightning(t.GetPhysicalID(), t.Meta(), indexInfo, jobStartTs, &wc)
 	rowDecoder := decoder.NewRowDecoder(t, t.WritableCols(), decodeColMap)
+
 	return &addIndexWorker{
 		baseIndexWorker: baseIndexWorker{
 			backfillWorker: newBackfillWorker(sessCtx, worker, id, t),
@@ -1048,7 +1053,9 @@ func newAddIndexWorker(sessCtx sessionctx.Context, worker *worker, id int, t tab
 			metricCounter:  metrics.BackfillTotalCounter.WithLabelValues("add_idx_speed"),
 			sqlMode:        sqlMode,
 		},
-		index: index,
+		wc:         &wc,
+		jobStartTs: jobStartTs,
+		index:      index,
 	}
 }
 
@@ -1313,6 +1320,13 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 	}
 	taskCtx.nextKey = nextKey
 	taskCtx.done = taskDone
+	// TODO: delete later;
+	var minKey = make([]byte, len(nextKey)+2)
+	var maxKey = make([]byte, len(nextKey)+2)
+	// var prevKey = make([]byte, len(nextKey)+2)
+	// isSame := false
+	copy(minKey, nextKey)
+	copy(maxKey, nextKey)
 
 	err = w.batchCheckUniqueKey(txn, idxRecords)
 	if err != nil {
@@ -1346,9 +1360,35 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 			return taskCtx, errors.Trace(err)
 		}
 		taskCtx.addedCount++
+
+		// isSame = bytes.Equal(idxRecord.key, prevKey[:len(idxRecord.key)])
+		// copy(prevKey, idxRecord.key)
+
+		if bytes.Equal(idxRecord.key, []byte(handleRange.endKey)) {
+			sst.LogInfo("idxRecord.key=%x;handleRange=%s(%s -> %s).", idxRecord.key,
+				handleRange.String(), handleRange.startKey, handleRange.endKey)
+		}
+		// if sst.DoCheckSame(fmt.Sprintf("%x", idxRecord.key)) {
+		// 	sst.LogInfo("isSame=%v;inum=%d;", isSame, inum)
+		// 	sst.LogFatal("idxRecord.key=%x;handleRange=%s(%s -> %s); %x -> %x.", idxRecord.key,
+		// 		handleRange.String(), handleRange.startKey, handleRange.endKey, minKey, maxKey)
+		// }
+		// if bytes.Compare(minKey, idxRecord.key) > 0 {
+		// 	copy(minKey, idxRecord.key)
+		// }
+		// if bytes.Compare(maxKey, idxRecord.key) < 0 {
+		// 	copy(maxKey, idxRecord.key)
+		// }
 	}
+	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
+	w.wc.Reset()
+	if errInTxn != nil {
+		sst.LogError("FlushKeyValSync %d paris err:%s.", len(w.wc.Fetch()), errInTxn.Error())
+	}
+	// sst.LogInfo("handleRange=%s(%s -> %s); %x -> %x.",
+	// 	handleRange.String(), handleRange.startKey, handleRange.endKey, minKey, maxKey)
 	logSlowOperations(time.Since(oprStartTime), "AddIndexBackfillDataInTxn", 3000)
-	return taskCtx, nil
+	return taskCtx, errInTxn
 }
 
 // BackfillDataInTxn will backfill table index in a transaction, lock corresponding rowKey, if the value of rowKey is changed,

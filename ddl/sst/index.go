@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
@@ -21,7 +21,7 @@ func InitIndexOptimize() {
 	cluster.Port = cfg.Port
 	cluster.Status = cfg.Status.StatusPort
 	cluster.PdAddr = cfg.Path
-	fmt.Printf("InitOnce %+v.\n", cluster)
+	fmt.Printf("InitOnce %+v.ck=%v\n", cluster, *ck)
 	log.SetAppLogger(logutil.BgLogger())
 }
 
@@ -31,7 +31,7 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	_, err := ec.getEngineInfo(ddl.StartTs)
 	if err == nil {
 		// has found it ;
-		LogDebug("ddl %d has exist.")
+		LogDebug("ddl %d has exist.", ddl.StartTs)
 		ec.releaseRef(ddl.StartTs)
 		return nil
 	}
@@ -68,6 +68,7 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 }
 
 func IndexOperator(ctx context.Context, startTs uint64, k, v []byte) error {
+	LogFatal("IndexOperator logic error")
 	LogDebug("IndexOperator '%x','%x'", k, v)
 	ei, err := ec.getEngineInfo(startTs)
 	if err != nil {
@@ -104,6 +105,24 @@ func flushKvs(ctx context.Context, ei *engineInfo) error {
 		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
 	}
 	ei.ResetCache()
+	return nil
+}
+
+func FlushKeyValSync(ctx context.Context, startTs uint64, cache *WorkerKVCache) error {
+	ec.mtx.RLock()
+	ei, ok := ec.cache[startTs]
+	defer ec.mtx.RUnlock()
+	if !ok {
+		return ErrNotFound
+	}
+	lw, err := ei.getWriter()
+	if err != nil {
+		return fmt.Errorf("IndexOperator.getWriter err:%w", err)
+	}
+	err = lw.WriteRows(ctx, nil, kv.NewKvPairs(cache.Fetch()))
+	if err != nil {
+		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
+	}
 	return nil
 }
 
