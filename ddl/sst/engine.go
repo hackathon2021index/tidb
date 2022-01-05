@@ -89,9 +89,9 @@ func (ec *engineCache) getWriter(startTs uint64) (*backend.LocalEngineWriter, er
 }
 
 func (ec *engineCache) ReleaseEngine(startTs uint64) {
-	ec.mtx.RLock()
+	ec.mtx.Lock()
 	delete(ec.cache, startTs)
-	ec.mtx.RUnlock()
+	ec.mtx.Unlock()
 }
 
 func (ei *engineInfo) getWriter() (*backend.LocalEngineWriter, error) {
