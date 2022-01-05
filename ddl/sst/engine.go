@@ -68,6 +68,9 @@ func (ec *engineCache) releaseRef(startTs uint64) {
 	ec.mtx.RLock()
 	ei := ec.cache[startTs]
 	ec.mtx.RUnlock()
+	if ei == nil {
+		return
+	}
 	atomic.CompareAndSwapInt32(&ei.ref, 1, 0)
 }
 
