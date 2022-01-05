@@ -166,8 +166,8 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	if err != nil {
 		return err
 	}
-	defer ec.releaseRef(startTs)
 	flushKvs(ctx, ei)
+	defer ec.releaseRef(startTs)
 	//
 	LogInfo("FinishIndexOp %d;kvs=%d.", startTs, ei.size)
 	//
@@ -196,6 +196,8 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	if err != nil {
 		return fmt.Errorf("engine.Cleanup err:%w", err)
 	}
+	// should release before ReleaseEngine
+	ec.releaseRef(startTs)
 	ec.ReleaseEngine(startTs)
 	return nil
 }
