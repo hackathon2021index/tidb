@@ -33,6 +33,9 @@ func (wc *WorkerKVCache) Reset() {
 		wc.needGrow = false
 	}
 }
+func (wc *WorkerKVCache) Size() int {
+	return len(wc.pairs)
+}
 
 func (wc *WorkerKVCache) Fetch() []common.KvPair {
 	return wc.pairs

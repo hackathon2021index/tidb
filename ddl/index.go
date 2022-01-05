@@ -15,9 +15,10 @@
 package ddl
 
 import (
-	"bytes"
 	"context"
+	"fmt"
 	"github.com/pingcap/tidb/ddl/sst"
+	"github.com/pingcap/tidb/util/sqlexec"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -553,7 +554,13 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		job.SchemaState = model.StateWriteReorganization
 	case model.StateWriteReorganization:
 		// TODO: optimize index ddl.
-		sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
+		if *sst.IndexDDLLightning {
+			sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
+			if err != nil {
+				return ver, errors.Trace(fmt.Errorf("PrepareIndexOp err:%w", err))
+			}
+		}
+
 		// reorganization -> public
 		tbl, err := getTable(d.store, schemaID, tblInfo)
 		if err != nil {
@@ -575,6 +582,18 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 				}, false)
 			return w.addTableIndex(tbl, indexInfo, reorgInfo)
 		})
+		// TODO: optimize index ddl.
+		if err == nil && *sst.IndexDDLLightning {
+			ctx, err := w.sessPool.get()
+			if err != nil {
+				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
+			} else {
+				err = sst.FinishIndexOp(w.ctx, job.StartTS, ctx.(sqlexec.RestrictedSQLExecutor))
+				if err != nil {
+					logutil.BgLogger().Error("FinishIndexOp err2" + err.Error())
+				}
+			}
+		}
 		if err != nil {
 			if errWaitReorgTimeout.Equal(err) {
 				// if timeout, we should return, check for the owner and re-wait job done.
@@ -590,11 +609,6 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 			// Clean up the channel of notifyCancelReorgJob. Make sure it can't affect other jobs.
 			w.reorgCtx.cleanNotifyReorgCancel()
 			return ver, errors.Trace(err)
-		}
-		// TODO: optimize index ddl.
-		err = sst.FinishIndexOp(w.ctx, job.StartTS)
-		if err != nil {
-			logutil.BgLogger().Error("FinishIndexOp err" + err.Error())
 		}
 
 		// Clean up the channel of notifyCancelReorgJob. Make sure it can't affect other jobs.
@@ -1320,13 +1334,6 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 	}
 	taskCtx.nextKey = nextKey
 	taskCtx.done = taskDone
-	// TODO: delete later;
-	var minKey = make([]byte, len(nextKey)+2)
-	var maxKey = make([]byte, len(nextKey)+2)
-	// var prevKey = make([]byte, len(nextKey)+2)
-	// isSame := false
-	copy(minKey, nextKey)
-	copy(maxKey, nextKey)
 
 	err = w.batchCheckUniqueKey(txn, idxRecords)
 	if err != nil {
@@ -1360,25 +1367,6 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 			return taskCtx, errors.Trace(err)
 		}
 		taskCtx.addedCount++
-
-		// isSame = bytes.Equal(idxRecord.key, prevKey[:len(idxRecord.key)])
-		// copy(prevKey, idxRecord.key)
-
-		if bytes.Equal(idxRecord.key, []byte(handleRange.endKey)) {
-			sst.LogInfo("idxRecord.key=%x;handleRange=%s(%s -> %s).", idxRecord.key,
-				handleRange.String(), handleRange.startKey, handleRange.endKey)
-		}
-		// if sst.DoCheckSame(fmt.Sprintf("%x", idxRecord.key)) {
-		// 	sst.LogInfo("isSame=%v;inum=%d;", isSame, inum)
-		// 	sst.LogFatal("idxRecord.key=%x;handleRange=%s(%s -> %s); %x -> %x.", idxRecord.key,
-		// 		handleRange.String(), handleRange.startKey, handleRange.endKey, minKey, maxKey)
-		// }
-		// if bytes.Compare(minKey, idxRecord.key) > 0 {
-		// 	copy(minKey, idxRecord.key)
-		// }
-		// if bytes.Compare(maxKey, idxRecord.key) < 0 {
-		// 	copy(maxKey, idxRecord.key)
-		// }
 	}
 	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
 	w.wc.Reset()

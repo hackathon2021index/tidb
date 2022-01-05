@@ -47,6 +47,11 @@ func LogFatal(format string, a ...interface{}) {
 	logutil.BgLogger().Fatal(prefix_str + fmt.Sprintf(format, a...))
 }
 
+// this log is for test; delete after finish or convert to other log level.
+func LogTest(format string, a ...interface{}) {
+	logutil.BgLogger().Error(prefix_str + "JUST FOR TEST" + fmt.Sprintf(format, a...))
+}
+
 // pdaddr; tidb-host/status
 type ClusterInfo struct {
 	PdAddr string
@@ -131,6 +136,5 @@ func createLocalBackend(ctx context.Context, info ClusterInfo) (backend.Backend,
 		return backend.Backend{}, err
 	}
 	var g glue_
-	_ = glue.NewExternalTiDBGlue(nil, 0)
 	return local.NewLocalBackend(ctx, tls, cfg, &g, int(limit), nil)
 }
