@@ -16,6 +16,9 @@ package ddl
 
 import (
 	"context"
+	"fmt"
+	"github.com/pingcap/tidb/ddl/sst"
+	"github.com/pingcap/tidb/util/sqlexec"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -512,6 +515,8 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 	originalState := indexInfo.State
 	switch indexInfo.State {
 	case model.StateNone:
+		// TODO: optimize index-ddl
+		// sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.RealStartTS})
 		// none -> delete only
 		indexInfo.State = model.StateDeleteOnly
 		updateHiddenColumns(tblInfo, indexInfo, model.StatePublic)
@@ -548,6 +553,14 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		job.SnapshotVer = 0
 		job.SchemaState = model.StateWriteReorganization
 	case model.StateWriteReorganization:
+		// TODO: optimize index ddl.
+		if *sst.IndexDDLLightning {
+			sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
+			if err != nil {
+				return ver, errors.Trace(fmt.Errorf("PrepareIndexOp err:%w", err))
+			}
+		}
+
 		// reorganization -> public
 		tbl, err := getTable(d.store, schemaID, tblInfo)
 		if err != nil {
@@ -569,6 +582,18 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 				}, false)
 			return w.addTableIndex(tbl, indexInfo, reorgInfo)
 		})
+		// TODO: optimize index ddl.
+		if err == nil && *sst.IndexDDLLightning {
+			ctx, err := w.sessPool.get()
+			if err != nil {
+				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
+			} else {
+				err = sst.FinishIndexOp(w.ctx, job.StartTS, ctx.(sqlexec.RestrictedSQLExecutor))
+				if err != nil {
+					logutil.BgLogger().Error("FinishIndexOp err2" + err.Error())
+				}
+			}
+		}
 		if err != nil {
 			if errWaitReorgTimeout.Equal(err) {
 				// if timeout, we should return, check for the owner and re-wait job done.
@@ -585,6 +610,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 			w.reorgCtx.cleanNotifyReorgCancel()
 			return ver, errors.Trace(err)
 		}
+
 		// Clean up the channel of notifyCancelReorgJob. Make sure it can't affect other jobs.
 		w.reorgCtx.cleanNotifyReorgCancel()
 
@@ -1022,11 +1048,15 @@ type addIndexWorker struct {
 	idxKeyBufs         [][]byte
 	batchCheckKeys     []kv.Key
 	distinctCheckFlags []bool
+	wc                 *sst.WorkerKVCache
+	jobStartTs         uint64
 }
 
-func newAddIndexWorker(sessCtx sessionctx.Context, worker *worker, id int, t table.PhysicalTable, indexInfo *model.IndexInfo, decodeColMap map[int64]decoder.Column, sqlMode mysql.SQLMode) *addIndexWorker {
-	index := tables.NewIndex(t.GetPhysicalID(), t.Meta(), indexInfo)
+func newAddIndexWorker(sessCtx sessionctx.Context, worker *worker, id int, t table.PhysicalTable, indexInfo *model.IndexInfo, decodeColMap map[int64]decoder.Column, sqlMode mysql.SQLMode, jobStartTs uint64) *addIndexWorker {
+	wc := sst.NewWorkerKVCache()
+	index := tables.NewIndex4Lightning(t.GetPhysicalID(), t.Meta(), indexInfo, jobStartTs, &wc)
 	rowDecoder := decoder.NewRowDecoder(t, t.WritableCols(), decodeColMap)
+
 	return &addIndexWorker{
 		baseIndexWorker: baseIndexWorker{
 			backfillWorker: newBackfillWorker(sessCtx, worker, id, t),
@@ -1037,7 +1067,9 @@ func newAddIndexWorker(sessCtx sessionctx.Context, worker *worker, id int, t tab
 			metricCounter:  metrics.BackfillTotalCounter.WithLabelValues("add_idx_speed"),
 			sqlMode:        sqlMode,
 		},
-		index: index,
+		wc:         &wc,
+		jobStartTs: jobStartTs,
+		index:      index,
 	}
 }
 
@@ -1284,6 +1316,69 @@ func (w *addIndexWorker) batchCheckUniqueKey(txn kv.Transaction, idxRecords []*i
 	return nil
 }
 
+func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) (taskCtx backfillTaskContext, errInTxn error) {
+	oprStartTime := time.Now()
+
+	txn, err := w.sessCtx.GetStore().Begin()
+	if err != nil {
+		return taskCtx, errors.Trace(err)
+	}
+
+	taskCtx.addedCount = 0
+	taskCtx.scanCount = 0
+	txn.SetOption(kv.Priority, w.priority)
+
+	idxRecords, nextKey, taskDone, err := w.fetchRowColVals(txn, handleRange)
+	if err != nil {
+		return taskCtx, errors.Trace(err)
+	}
+	taskCtx.nextKey = nextKey
+	taskCtx.done = taskDone
+
+	err = w.batchCheckUniqueKey(txn, idxRecords)
+	if err != nil {
+		return taskCtx, errors.Trace(err)
+	}
+
+	for _, idxRecord := range idxRecords {
+		taskCtx.scanCount++
+		// The index is already exists, we skip it, no needs to backfill it.
+		// The following update, delete, insert on these rows, TiDB can handle it correctly.
+		if idxRecord.skip {
+			continue
+		}
+
+		// TODO: check if need lock.
+		// Lock the row key to notify us that someone delete or update the row,
+		// then we should not backfill the index of it, otherwise the adding index is redundant.
+		// err := txn.LockKeys(context.Background(), new(kv.LockCtx), idxRecord.key)
+		// if err != nil {
+		// 	return taskCtx,errors.Trace(err)
+		// }
+
+		// Create the index.
+		handle, err := w.index.Create(w.sessCtx, txn, idxRecord.vals, idxRecord.handle, idxRecord.rsData)
+		if err != nil {
+			if kv.ErrKeyExists.Equal(err) && idxRecord.handle.Equal(handle) {
+				// Index already exists, skip it.
+				continue
+			}
+
+			return taskCtx, errors.Trace(err)
+		}
+		taskCtx.addedCount++
+	}
+	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
+	w.wc.Reset()
+	if errInTxn != nil {
+		sst.LogError("FlushKeyValSync %d paris err:%s.", len(w.wc.Fetch()), errInTxn.Error())
+	}
+	// sst.LogInfo("handleRange=%s(%s -> %s); %x -> %x.",
+	// 	handleRange.String(), handleRange.startKey, handleRange.endKey, minKey, maxKey)
+	logSlowOperations(time.Since(oprStartTime), "AddIndexBackfillDataInTxn", 3000)
+	return taskCtx, errInTxn
+}
+
 // BackfillDataInTxn will backfill table index in a transaction, lock corresponding rowKey, if the value of rowKey is changed,
 // indicate that index columns values may changed, index is not allowed to be added, so the txn will rollback and retry.
 // BackfillDataInTxn will add w.batchCnt indices once, default value of w.batchCnt is 128.
@@ -1294,7 +1389,9 @@ func (w *addIndexWorker) BackfillDataInTxn(handleRange reorgBackfillTask) (taskC
 			panic("panic test")
 		}
 	})
-
+	if *sst.IndexDDLLightning {
+		return w.backfillDataInTxnByRead(handleRange)
+	}
 	oprStartTime := time.Now()
 	errInTxn = kv.RunInNewTxn(context.Background(), w.sessCtx.GetStore(), true, func(ctx context.Context, txn kv.Transaction) error {
 		taskCtx.addedCount = 0

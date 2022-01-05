@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/pingcap/tidb/ddl/sst"
 	"io/fs"
 	"os"
 	"runtime"
@@ -194,6 +195,8 @@ func main() {
 	printInfo()
 	setupBinlogClient()
 	setupMetrics()
+	// TODO: add index optimize
+	sst.InitIndexOptimize()
 
 	storage, dom := createStoreAndDomain()
 	svr := createServer(storage, dom)

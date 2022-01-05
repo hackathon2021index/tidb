@@ -288,6 +288,13 @@ type KvPairs struct {
 	memBuf   *kvMemBuf
 }
 
+func NewKvPairs(kvs []common.KvPair)*KvPairs{
+	return &KvPairs{
+		pairs: kvs,
+	}
+}
+
+
 // MakeRowsFromKvPairs converts a KvPair slice into a Rows instance. This is
 // mainly used for testing only. The resulting Rows instance should only be used
 // for the importer backend.
