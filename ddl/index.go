@@ -21,8 +21,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pingcap/tidb/ddl/sst"
-
 	tableutil "github.com/pingcap/tidb/table/tables/util"
 
 	"github.com/pingcap/errors"
@@ -562,7 +560,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		}
 		// TODO: optimize index ddl.
 		if *sst.IndexDDLLightning {
-			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
+			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, currentTS})
 			if err != nil {
 				return ver, errors.Trace(fmt.Errorf("PrepareIndexOp err:%w", err))
 			}
@@ -595,7 +593,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 			if err != nil {
 				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
 			} else {
-				err = sst.FinishIndexOp(w.ctx, job.StartTS, ctx.(sqlexec.RestrictedSQLExecutor))
+				err = sst.FinishIndexOp(w.ctx, currentTS, ctx.(sqlexec.RestrictedSQLExecutor))
 				if err != nil {
 					logutil.BgLogger().Error("FinishIndexOp err2" + err.Error())
 				}
@@ -616,13 +614,6 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 			// Clean up the channel of notifyCancelReorgJob. Make sure it can't affect other jobs.
 			w.reorgCtx.cleanNotifyReorgCancel()
 			return ver, errors.Trace(err)
-		}
-		if *sst.IndexDDLLightning {
-			// TODO: optimize index ddl.
-			err = sst.FinishIndexOp(w.ctx, currentTS)
-			if err != nil {
-				logutil.BgLogger().Error("FinishIndexOp err" + err.Error())
-			}
 		}
 
 		// Clean up the channel of notifyCancelReorgJob. Make sure it can't affect other jobs.
@@ -1383,7 +1374,6 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		taskCtx.addedCount++
 	}
 	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
-	w.wc.Reset()
 	if errInTxn != nil {
 		sst.LogError("FlushKeyValSync %d paris err:%s.", len(w.wc.Fetch()), errInTxn.Error())
 	}

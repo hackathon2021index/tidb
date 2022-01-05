@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/util/sqlexec"
 
@@ -72,47 +73,6 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	return nil
 }
 
-func IndexOperator(ctx context.Context, startTs uint64, k, v []byte) error {
-	LogFatal("IndexOperator logic error")
-	LogDebug("IndexOperator '%x','%x'", k, v)
-	ei, err := ec.getEngineInfo(startTs)
-	if err != nil {
-		return err
-	}
-	defer ec.releaseRef(startTs)
-	//
-
-	ei.pushKV(k, v)
-	kvSize := ei.size
-	if kvSize < flush_size {
-		return nil
-	}
-	//
-	return flushKvs(ctx, ei)
-}
-
-func flushKvs(ctx context.Context, ei *engineInfo) error {
-	if len(ei.kvs) <= 0 {
-		return nil
-	}
-	if ctx == nil {
-		// this may be nil,and used in WriteRows;
-		ctx = context.TODO()
-	}
-	LogInfo("flushKvs (%d)", len(ei.kvs))
-	lw, err := ei.getWriter()
-	if err != nil {
-		return fmt.Errorf("IndexOperator.getWriter err:%w", err)
-	}
-
-	err = lw.WriteRows(ctx, nil, kv.NewKvPairs(ei.kvs))
-	if err != nil {
-		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
-	}
-	ei.ResetCache()
-	return nil
-}
-
 func FlushKeyValSync(ctx context.Context, startTs uint64, cache *WorkerKVCache) error {
 	ec.mtx.RLock()
 	ei, ok := ec.cache[startTs]
@@ -129,6 +89,7 @@ func FlushKeyValSync(ctx context.Context, startTs uint64, cache *WorkerKVCache) 
 		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
 	}
 	ei.size += cache.Size()
+	cache.Reset()
 	return nil
 }
 
@@ -169,7 +130,6 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 		return err
 	}
 	defer ec.releaseRef(startTs)
-	flushKvs(ctx, ei)
 	//
 	LogInfo("FinishIndexOp %d;kvs=%d.", startTs, ei.size)
 	//

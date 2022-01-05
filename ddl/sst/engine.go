@@ -2,19 +2,21 @@ package sst
 
 import (
 	"context"
-	"github.com/pingcap/tidb/parser/model"
 	"sync"
 	"sync/atomic"
 
+	"github.com/pingcap/tidb/parser/model"
+
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 )
 
 type engineInfo struct {
-	*backend.OpenedEngine
-	writer *backend.LocalEngineWriter
-	cfg    *backend.EngineConfig
+	OpenedEngine *backend.OpenedEngine
+	writer       *backend.LocalEngineWriter
+	cfg          *backend.EngineConfig
 	// TODO: use channel later;
 	ref  int32
 	kvs  []common.KvPair
@@ -25,16 +27,6 @@ type engineInfo struct {
 func (ei *engineInfo) ResetCache() {
 	ei.kvs = ei.kvs[:0]
 	ei.size = 0
-}
-
-func (ei *engineInfo) pushKV(k, v []byte) {
-	klen := len(k)
-	dlen := klen + len(v)
-	ei.size = ei.size + dlen
-	buf := make([]byte, dlen)
-	copy(buf[:klen], k)
-	copy(buf[klen:], v)
-	ei.kvs = append(ei.kvs, common.KvPair{Key: buf[:klen], Val: buf[klen:]})
 }
 
 func (ec *engineCache) put(startTs uint64, cfg *backend.EngineConfig, en *backend.OpenedEngine, tbl *model.TableInfo) {
