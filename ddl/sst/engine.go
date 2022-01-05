@@ -2,7 +2,6 @@ package sst
 
 import (
 	"context"
-	"flag"
 	"github.com/pingcap/tidb/parser/model"
 	"sync"
 	"sync/atomic"
@@ -17,10 +16,10 @@ type engineInfo struct {
 	writer *backend.LocalEngineWriter
 	cfg    *backend.EngineConfig
 	// TODO: use channel later;
-	ref   int32
-	kvs   []common.KvPair
-	size  int
-	tbl   *model.TableInfo
+	ref  int32
+	kvs  []common.KvPair
+	size int
+	tbl  *model.TableInfo
 }
 
 func (ei *engineInfo) ResetCache() {
@@ -54,11 +53,8 @@ func (ec *engineCache) put(startTs uint64, cfg *backend.EngineConfig, en *backen
 }
 
 var (
-	ErrNotFound       = errors.New("not object in this cache")
-	ErrWasInUse       = errors.New("this object was in used")
-	ec                = engineCache{cache: map[uint64]*engineInfo{}}
-	cluster           ClusterInfo
-	IndexDDLLightning = flag.Bool("ddl-mode", true, "index ddl use sst mode")
+	ErrNotFound = errors.New("not object in this cache")
+	ErrWasInUse = errors.New("this object was in used")
 )
 
 func (ec *engineCache) getEngineInfo(startTs uint64) (*engineInfo, error) {
@@ -90,6 +86,12 @@ func (ec *engineCache) getWriter(startTs uint64) (*backend.LocalEngineWriter, er
 		return nil, err
 	}
 	return ei.getWriter()
+}
+
+func (ec *engineCache) ReleaseEngine(startTs uint64) {
+	ec.mtx.RLock()
+	delete(ec.cache, startTs)
+	ec.mtx.RUnlock()
 }
 
 func (ei *engineInfo) getWriter() (*backend.LocalEngineWriter, error) {

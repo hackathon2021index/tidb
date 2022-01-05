@@ -3,6 +3,7 @@ package sst
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -29,6 +30,11 @@ const (
 var (
 	limit       = int64(1024)
 	tblId int64 = time.Now().Unix()
+	//
+	ec                = engineCache{cache: map[uint64]*engineInfo{}}
+	cluster           ClusterInfo
+	IndexDDLLightning = flag.Bool("ddl-mode", true, "index ddl use sst mode")
+	sortkv            = flag.String("sortkv", "/tmp", "temp file for sort kv")
 )
 
 func LogInfo(format string, a ...interface{}) {
@@ -112,7 +118,7 @@ func (_ glue_) Record(string, uint64) {
 func generateLightningConfig(info ClusterInfo) *config.Config {
 	cfg := config.Config{}
 	cfg.DefaultVarsForImporterAndLocalBackend()
-	name, err := ioutil.TempDir("/tmp/", "lightning")
+	name, err := ioutil.TempDir(*sortkv, "lightning")
 	if err != nil {
 		logutil.BgLogger().Warn(fmt.Sprintf("TempDir err:%s.", err.Error()))
 		name = "/tmp/lightning"

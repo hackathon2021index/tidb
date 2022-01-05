@@ -196,5 +196,6 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	if err != nil {
 		return fmt.Errorf("engine.Cleanup err:%w", err)
 	}
+	ec.ReleaseEngine(startTs)
 	return nil
 }
