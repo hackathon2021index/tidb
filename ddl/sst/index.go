@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/twmb/murmur3"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
@@ -12,7 +14,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	tidbcfg "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/util/logutil"
-	"github.com/twmb/murmur3"
 )
 
 func InitIndexOptimize() {
@@ -48,6 +49,7 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	}
 	cpt := checkpoints.TidbTableInfo{
 		genNextTblId(),
+		ddl.StartTs,
 		ddl.Schema,
 		ddl.Table.Name.String(),
 		ddl.Table,

@@ -17,10 +17,11 @@ package ddl
 import (
 	"bytes"
 	"context"
-	"github.com/pingcap/tidb/ddl/sst"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/pingcap/tidb/ddl/sst"
 
 	tableutil "github.com/pingcap/tidb/table/tables/util"
 
@@ -552,8 +553,16 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		job.SnapshotVer = 0
 		job.SchemaState = model.StateWriteReorganization
 	case model.StateWriteReorganization:
+		currentVer, err := d.store.CurrentVersion(kv.GlobalTxnScope)
+		currentTS := job.StartTS
+		if err == nil {
+			currentTS = currentVer.Ver
+		}
 		// TODO: optimize index ddl.
-		sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
+		err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, currentTS})
+		if err != nil {
+			return ver, errors.Trace(err)
+		}
 		// reorganization -> public
 		tbl, err := getTable(d.store, schemaID, tblInfo)
 		if err != nil {
@@ -592,7 +601,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 			return ver, errors.Trace(err)
 		}
 		// TODO: optimize index ddl.
-		err = sst.FinishIndexOp(w.ctx, job.StartTS)
+		err = sst.FinishIndexOp(w.ctx, currentTS)
 		if err != nil {
 			logutil.BgLogger().Error("FinishIndexOp err" + err.Error())
 		}

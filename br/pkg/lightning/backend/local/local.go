@@ -1310,6 +1310,7 @@ func (local *local) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, e
 	})
 	engine := e.(*File)
 	engine.db = db
+	engine.TS = cfg.TableInfo.TSO
 	engine.sstIngester = dbSSTIngester{e: engine}
 	if err = engine.loadEngineMeta(); err != nil {
 		return errors.Trace(err)
