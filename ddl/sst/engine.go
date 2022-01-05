@@ -1,14 +1,14 @@
 package sst
 
 import (
+	"context"
+	"github.com/pingcap/tidb/parser/model"
 	"sync"
 	"sync/atomic"
-	"flag"
-	"context"
 
+	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
-	"github.com/pingcap/errors"
 )
 
 type engineInfo struct {
@@ -19,6 +19,7 @@ type engineInfo struct {
 	ref  int32
 	kvs  []common.KvPair
 	size int
+	tbl  *model.TableInfo
 }
 
 func (ei *engineInfo) ResetCache() {
@@ -36,7 +37,7 @@ func (ei *engineInfo) pushKV(k, v []byte) {
 	ei.kvs = append(ei.kvs, common.KvPair{Key: buf[:klen], Val: buf[klen:]})
 }
 
-func (ec *engineCache) put(startTs uint64, cfg *backend.EngineConfig, en *backend.OpenedEngine) {
+func (ec *engineCache) put(startTs uint64, cfg *backend.EngineConfig, en *backend.OpenedEngine, tbl *model.TableInfo) {
 	ec.mtx.Lock()
 	ec.cache[startTs] = &engineInfo{
 		en,
@@ -45,17 +46,15 @@ func (ec *engineCache) put(startTs uint64, cfg *backend.EngineConfig, en *backen
 		0,
 		nil,
 		0,
+		tbl,
 	}
 	ec.mtx.Unlock()
 	LogDebug("put %d", startTs)
 }
 
 var (
-	ErrNotFound       = errors.New("not object in this cache")
-	ErrWasInUse       = errors.New("this object was in used")
-	ec                = engineCache{cache: map[uint64]*engineInfo{}}
-	cluster           ClusterInfo
-	IndexDDLLightning = flag.Bool("ddl-mode", true, "index ddl use sst mode")
+	ErrNotFound = errors.New("not object in this cache")
+	ErrWasInUse = errors.New("this object was in used")
 )
 
 func (ec *engineCache) getEngineInfo(startTs uint64) (*engineInfo, error) {
@@ -87,6 +86,12 @@ func (ec *engineCache) getWriter(startTs uint64) (*backend.LocalEngineWriter, er
 		return nil, err
 	}
 	return ei.getWriter()
+}
+
+func (ec *engineCache) ReleaseEngine(startTs uint64) {
+	ec.mtx.Lock()
+	delete(ec.cache, startTs)
+	ec.mtx.Unlock()
 }
 
 func (ei *engineInfo) getWriter() (*backend.LocalEngineWriter, error) {

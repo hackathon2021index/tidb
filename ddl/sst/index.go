@@ -3,7 +3,10 @@ package sst
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
+	"github.com/pingcap/tidb/util/sqlexec"
 
 	"github.com/twmb/murmur3"
 
@@ -65,7 +68,7 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	if err != nil {
 		return fmt.Errorf("PrepareIndexOp.OpenEngine err:%w", err)
 	}
-	ec.put(ddl.StartTs, &cfg, en)
+	ec.put(ddl.StartTs, &cfg, en, ddl.Table)
 	return nil
 }
 
@@ -125,17 +128,59 @@ func FlushKeyValSync(ctx context.Context, startTs uint64, cache *WorkerKVCache) 
 	if err != nil {
 		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
 	}
+	ei.size += cache.Size()
 	return nil
 }
 
-func FinishIndexOp(ctx context.Context, startTs uint64) error {
-	LogInfo("FinishIndexOp %d", startTs)
+func fetchTableRegionSizeStats(tblId int64, exec sqlexec.RestrictedSQLExecutor) (ret map[uint64]int64, err error) {
+	// must use '%?' to replace '?' in RestrictedSQLExecutor.
+	query := "SELECT REGION_ID, APPROXIMATE_SIZE FROM information_schema.TIKV_REGION_STATUS WHERE TABLE_ID = %?"
+	sn, err := exec.ParseWithParams(context.TODO(), query, tblId)
+	if err != nil {
+		return nil, fmt.Errorf("ParseWithParams err:%w", err)
+	}
+	rows, _, err := exec.ExecRestrictedStmt(context.TODO(), sn)
+	if err != nil {
+		return nil, fmt.Errorf("ExecRestrictedStmt err:%w", err)
+	}
+	// parse values;
+	ret = make(map[uint64]int64, len(rows))
+	var (
+		regionID uint64
+		size     int64
+	)
+	for idx, row := range rows {
+		if 2 != row.Len() {
+			return nil, fmt.Errorf("row %d has %d fields", idx, row.Len())
+		}
+		regionID = row.GetUint64(0)
+		size = row.GetInt64(1)
+		ret[regionID] = size
+	}
+	//
+	d, _ := json.Marshal(ret)
+	LogTest("fetchTableRegionSizeStats table(%d) = %s.", tblId, string(d))
+	return ret, nil
+}
+
+func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedSQLExecutor) error {
 	ei, err := ec.getEngineInfo(startTs)
 	if err != nil {
 		return err
 	}
 	defer ec.releaseRef(startTs)
 	flushKvs(ctx, ei)
+	//
+	LogInfo("FinishIndexOp %d;kvs=%d.", startTs, ei.size)
+	//
+	ret, err := fetchTableRegionSizeStats(ei.tbl.ID, exec)
+	if err != nil {
+		return err
+	}
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+	ctx = context.WithValue(ctx, local.RegionSizeStats, ret)
 	//
 	indexEngine := ei.OpenedEngine
 	cfg := ei.cfg
@@ -153,5 +198,6 @@ func FinishIndexOp(ctx context.Context, startTs uint64) error {
 	if err != nil {
 		return fmt.Errorf("engine.Cleanup err:%w", err)
 	}
+	ec.ReleaseEngine(startTs)
 	return nil
 }

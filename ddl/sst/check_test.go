@@ -1,10 +1,13 @@
 package sst
 
 import (
+	"context"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 var (
@@ -92,4 +95,31 @@ func TestParseRecord(t *testing.T) {
 
 	assert.Less(t, strings.Compare(r.sk, r.min), 0)
 	assert.Less(t, strings.Compare(r.max, r.ek), 0)
+}
+
+type pair struct {
+	a int
+	b string
+}
+
+const (
+	key = "paris"
+)
+
+func run(ctx context.Context) {
+	ps := ctx.Value(key).([]pair)
+	select {
+	case <-ctx.Done():
+		fmt.Printf("run finish:%+v.\n",ps)
+	}
+}
+
+func TestContext(t *testing.T) {
+	pairs := []pair{{1, "1"}, {3, "3"}, {2, "2"}}
+	ctx,cancel := context.WithCancel(context.TODO())
+	pc := context.WithValue(ctx,key,pairs)
+	go run(pc)
+	time.Sleep(time.Second)
+	cancel()
+	time.Sleep(time.Second)
 }

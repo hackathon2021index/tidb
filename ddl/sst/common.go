@@ -3,6 +3,7 @@ package sst
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -29,6 +30,11 @@ const (
 var (
 	limit       = int64(1024)
 	tblId int64 = time.Now().Unix()
+	//
+	ec                = engineCache{cache: map[uint64]*engineInfo{}}
+	cluster           ClusterInfo
+	IndexDDLLightning = flag.Bool("ddl-mode", true, "index ddl use sst mode")
+	sortkv            = flag.String("sortkv", "/tmp", "temp file for sort kv")
 )
 
 func LogInfo(format string, a ...interface{}) {
@@ -45,6 +51,11 @@ func LogError(format string, a ...interface{}) {
 
 func LogFatal(format string, a ...interface{}) {
 	logutil.BgLogger().Fatal(prefix_str + fmt.Sprintf(format, a...))
+}
+
+// this log is for test; delete after finish or convert to other log level.
+func LogTest(format string, a ...interface{}) {
+	logutil.BgLogger().Error(prefix_str + "JUST FOR TEST" + fmt.Sprintf(format, a...))
 }
 
 // pdaddr; tidb-host/status
@@ -107,7 +118,7 @@ func (_ glue_) Record(string, uint64) {
 func generateLightningConfig(info ClusterInfo) *config.Config {
 	cfg := config.Config{}
 	cfg.DefaultVarsForImporterAndLocalBackend()
-	name, err := ioutil.TempDir("/tmp/", "lightning")
+	name, err := ioutil.TempDir(*sortkv, "lightning")
 	if err != nil {
 		logutil.BgLogger().Warn(fmt.Sprintf("TempDir err:%s.", err.Error()))
 		name = "/tmp/lightning"
@@ -131,6 +142,5 @@ func createLocalBackend(ctx context.Context, info ClusterInfo) (backend.Backend,
 		return backend.Backend{}, err
 	}
 	var g glue_
-	_ = glue.NewExternalTiDBGlue(nil, 0)
 	return local.NewLocalBackend(ctx, tls, cfg, &g, int(limit), nil)
 }
