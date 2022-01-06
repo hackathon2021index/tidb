@@ -75,6 +75,7 @@ type DuplicateManager struct {
 	keyAdapter        KeyAdapter
 	remoteWorkerPool  *utilpool.WorkerPool
 	opts              *kv.SessionOptions
+	duplicateAbort    bool
 }
 
 type pendingIndexHandles struct {
@@ -192,6 +193,7 @@ func NewDuplicateManager(local *local, ts uint64, opts *kv.SessionOptions) (*Dup
 		regionConcurrency: local.tcpConcurrency,
 		splitCli:          local.splitCli,
 		tikvCli:           local.tikvCli,
+		duplicateAbort:    local.duplicateAbort,
 		keyAdapter:        duplicateKeyAdapter{},
 		ts:                ts,
 		connPool:          common.NewGRPCConns(),
@@ -326,6 +328,10 @@ func (manager *DuplicateManager) sendRequestToTiKV(ctx context.Context,
 						break
 					}
 					hasErr = true
+				}
+				if manager.duplicateAbort && len(resp.Pairs) > 0 {
+					hasDupe.Store(true)
+					return errors.Errorf("found duplicate key %s", resp.Pairs[0])
 				}
 
 				if hasErr || resp.GetKeyError() != nil {

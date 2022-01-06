@@ -6,7 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/pingcap/errors"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
+	"github.com/pingcap/tidb/parser/mysql"
+	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/util/sqlexec"
 
 	"github.com/twmb/murmur3"
@@ -46,7 +51,7 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	LogInfo("PrepareIndexOp %+v", ddl)
 	// err == ErrNotFound
 	info := cluster
-	be, err := createLocalBackend(ctx, info)
+	be, err := createLocalBackend(ctx, info, ddl.Unique)
 	if err != nil {
 		LogFatal("PrepareIndexOp.createLocalBackend err:%s.", err.Error())
 		return fmt.Errorf("PrepareIndexOp.createLocalBackend err:%w", err)
@@ -67,9 +72,9 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	h.Write(b[:])
 	en, err := be.OpenEngine(ctx, &cfg, ddl.Table.Name.String(), int32(h.Sum32()))
 	if err != nil {
-		return fmt.Errorf("PrepareIndexOp.OpenEngine err:%w", err)
+		return errors.Errorf("PrepareIndexOp.OpenEngine err:%v", err)
 	}
-	ec.put(ddl.StartTs, &cfg, en, ddl.Table)
+	ec.put(ddl.StartTs, &cfg, be, en, ddl.Table)
 	return nil
 }
 
@@ -124,12 +129,15 @@ func fetchTableRegionSizeStats(tblId int64, exec sqlexec.RestrictedSQLExecutor) 
 	return ret, nil
 }
 
-func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedSQLExecutor) error {
+func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedSQLExecutor, tbl table.Table, unique bool) error {
 	ei, err := ec.getEngineInfo(startTs)
 	if err != nil {
 		return err
 	}
-	defer ec.releaseRef(startTs)
+	defer func() {
+		ec.releaseRef(startTs)
+		ec.ReleaseEngine(startTs)
+	}()
 	//
 	LogInfo("FinishIndexOp %d;kvs=%d.", startTs, ei.size)
 	//
@@ -147,19 +155,41 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	//
 	closeEngine, err1 := indexEngine.Close(ctx, cfg)
 	if err1 != nil {
-		return fmt.Errorf("engine.Close err:%w", err1)
+		return errors.Errorf("engine.Close err:%v", err1)
 	}
 	// use default value first;
 	err = closeEngine.Import(ctx, int64(config.SplitRegionSize))
 	if err != nil {
-		return fmt.Errorf("engine.Import err:%w", err)
+		return errors.Errorf("engine.Import err:%v", err)
 	}
 	err = closeEngine.Cleanup(ctx)
 	if err != nil {
-		return fmt.Errorf("engine.Cleanup err:%w", err)
+		return errors.Errorf("engine.Cleanup err:%v", err)
+	}
+	if unique {
+		hasDupe, err := ei.backend.CollectRemoteDuplicateRows(ctx, tbl, ei.tbl.Name.O, &kv.SessionOptions{
+			SQLMode: mysql.ModeStrictAllTables,
+			SysVars: defaultImportantVariables,
+		})
+		if hasDupe {
+			return errors.Errorf("unique index conflicts detected: %v", err)
+		} else if err != nil {
+			logutil.BgLogger().Error("fail to detect unique index conflicts, unknown index status", zap.Error(err))
+			return errors.Errorf("fail to detect unique index conflicts, unknown index status %v", err)
+		}
 	}
 	// should release before ReleaseEngine
 	ec.releaseRef(startTs)
 	ec.ReleaseEngine(startTs)
 	return nil
+}
+
+var defaultImportantVariables = map[string]string{
+	"max_allowed_packet":      "67108864",
+	"div_precision_increment": "4",
+	"time_zone":               "SYSTEM",
+	"lc_time_names":           "en_US",
+	"default_week_format":     "0",
+	"block_encryption_mode":   "aes-128-ecb",
+	"group_concat_max_len":    "1024",
 }

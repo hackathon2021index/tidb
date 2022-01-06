@@ -70,6 +70,7 @@ type DDLInfo struct {
 	Schema  string
 	Table   *model.TableInfo
 	StartTs uint64
+	Unique  bool
 }
 
 func genNextTblId() int64 {
@@ -115,7 +116,7 @@ func (_ glue_) Record(string, uint64) {
 
 }
 
-func generateLightningConfig(info ClusterInfo) *config.Config {
+func generateLightningConfig(info ClusterInfo, unique bool) *config.Config {
 	cfg := config.Config{}
 	cfg.DefaultVarsForImporterAndLocalBackend()
 	name, err := ioutil.TempDir(*sortkv, "lightning")
@@ -128,15 +129,19 @@ func generateLightningConfig(info ClusterInfo) *config.Config {
 	// cfg.TikvImporter.RangeConcurrency = 32
 	cfg.Checkpoint.Enable = false
 	cfg.TikvImporter.SortedKVDir = name
-	cfg.TikvImporter.DuplicateResolution = config.DupeResAlgNone
+	if unique {
+		cfg.TikvImporter.DuplicateResolution = config.DupeResAlgNone
+	} else {
+		cfg.TikvImporter.DuplicateResolution = config.DupeResAlgAbort
+	}
 	cfg.TiDB.PdAddr = info.PdAddr
 	cfg.TiDB.Host = "127.0.0.1"
 	cfg.TiDB.StatusPort = int(info.Status)
 	return &cfg
 }
 
-func createLocalBackend(ctx context.Context, info ClusterInfo) (backend.Backend, error) {
-	cfg := generateLightningConfig(info)
+func createLocalBackend(ctx context.Context, info ClusterInfo, unique bool) (backend.Backend, error) {
+	cfg := generateLightningConfig(info, unique)
 	tls, err := cfg.ToTLS()
 	if err != nil {
 		return backend.Backend{}, err

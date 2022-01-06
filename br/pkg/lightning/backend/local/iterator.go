@@ -19,6 +19,7 @@ import (
 	"context"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/pingcap/errors"
 	sst "github.com/pingcap/kvproto/pkg/import_sstpb"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
@@ -60,6 +61,7 @@ type duplicateIter struct {
 	writeBatch     *pebble.Batch
 	writeBatchSize int64
 	logger         log.Logger
+	duplicateAbort bool
 }
 
 func (d *duplicateIter) Seek(key []byte) bool {
@@ -124,6 +126,11 @@ func (d *duplicateIter) Next() bool {
 			d.curVal = append(d.curVal[:0], d.iter.Value()...)
 			return true
 		}
+		if d.duplicateAbort {
+			d.err = errors.Errorf("found duplicate key %s", d.curKey)
+			return false
+		}
+
 		d.logger.Debug("[detect-dupe] local duplicate key detected",
 			logutil.Key("key", d.curKey),
 			logutil.Key("prevValue", d.curVal),

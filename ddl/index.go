@@ -560,7 +560,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		}
 		// TODO: optimize index ddl.
 		if *sst.IndexDDLLightning {
-			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, currentTS})
+			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, currentTS, indexInfo.Unique})
 			if err != nil {
 				return ver, errors.Trace(fmt.Errorf("PrepareIndexOp err:%w", err))
 			}
@@ -592,10 +592,12 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 			ctx, err := w.sessPool.get()
 			if err != nil {
 				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
+				return ver, errors.Trace(err)
 			} else {
-				err = sst.FinishIndexOp(w.ctx, currentTS, ctx.(sqlexec.RestrictedSQLExecutor))
+				err = sst.FinishIndexOp(w.ctx, currentTS, ctx.(sqlexec.RestrictedSQLExecutor), tbl, indexInfo.Unique)
 				if err != nil {
 					logutil.BgLogger().Error("FinishIndexOp err2" + err.Error())
+					return ver, errors.Trace(err)
 				}
 			}
 		}

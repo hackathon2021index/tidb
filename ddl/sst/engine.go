@@ -14,6 +14,7 @@ import (
 )
 
 type engineInfo struct {
+	backend      backend.Backend
 	OpenedEngine *backend.OpenedEngine
 	writer       *backend.LocalEngineWriter
 	cfg          *backend.EngineConfig
@@ -29,9 +30,10 @@ func (ei *engineInfo) ResetCache() {
 	ei.size = 0
 }
 
-func (ec *engineCache) put(startTs uint64, cfg *backend.EngineConfig, en *backend.OpenedEngine, tbl *model.TableInfo) {
+func (ec *engineCache) put(startTs uint64, cfg *backend.EngineConfig, be backend.Backend, en *backend.OpenedEngine, tbl *model.TableInfo) {
 	ec.mtx.Lock()
 	ec.cache[startTs] = &engineInfo{
+		be,
 		en,
 		nil,
 		cfg,
