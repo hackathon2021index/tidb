@@ -34,10 +34,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/felixge/fgprof"
 	"github.com/gorilla/mux"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/fn"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/soheilhy/cmux"
+	"github.com/tiancaiamao/appdash/traceapp"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/channelz/service"
+	static "sourcegraph.com/sourcegraph/appdash-data"
+
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/mysql"
@@ -48,12 +56,6 @@ import (
 	"github.com/pingcap/tidb/util/printer"
 	"github.com/pingcap/tidb/util/topsql/tracecpu"
 	"github.com/pingcap/tidb/util/versioninfo"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/soheilhy/cmux"
-	"github.com/tiancaiamao/appdash/traceapp"
-	"go.uber.org/zap"
-	"google.golang.org/grpc/channelz/service"
-	static "sourcegraph.com/sourcegraph/appdash-data"
 )
 
 const defaultStatusPort = 10080
@@ -274,6 +276,7 @@ func (s *Server) startHTTPServer() {
 	serverMux := http.NewServeMux()
 	serverMux.Handle("/", router)
 
+	serverMux.Handle("/debug/fgprof", fgprof.Handler())
 	serverMux.HandleFunc("/debug/pprof/", pprof.Index)
 	serverMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	serverMux.HandleFunc("/debug/pprof/profile", tracecpu.ProfileHTTPHandler)
