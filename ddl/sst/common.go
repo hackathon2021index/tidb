@@ -130,9 +130,9 @@ func generateLightningConfig(info ClusterInfo, unique bool) *config.Config {
 	cfg.Checkpoint.Enable = false
 	cfg.TikvImporter.SortedKVDir = name
 	if unique {
-		cfg.TikvImporter.DuplicateResolution = config.DupeResAlgNone
-	} else {
 		cfg.TikvImporter.DuplicateResolution = config.DupeResAlgAbort
+	} else {
+		cfg.TikvImporter.DuplicateResolution = config.DupeResAlgNone
 	}
 	cfg.TiDB.PdAddr = info.PdAddr
 	cfg.TiDB.Host = "127.0.0.1"
