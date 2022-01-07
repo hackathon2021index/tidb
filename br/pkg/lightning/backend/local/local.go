@@ -1357,6 +1357,7 @@ func (local *local) CloseEngine(ctx context.Context, cfg *backend.EngineConfig, 
 			sstMetasChan:       make(chan metaOrFlush),
 			tableInfo:          cfg.TableInfo,
 			duplicateDetection: local.duplicateDetection,
+			duplicateAbort:     local.duplicateAbort,
 			duplicateDB:        local.duplicateDB,
 			errorMgr:           local.errorMgr,
 		}
