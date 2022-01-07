@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	tableutil "github.com/pingcap/tidb/table/tables/util"
 
 	"github.com/pingcap/errors"
@@ -1349,6 +1350,8 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		if idxRecord.skip {
 			continue
 		}
+		log.L().Info("[debug-fetch] idxRecord info", zap.Int("scanCount", taskCtx.scanCount), zap.Int("addedCount", taskCtx.addedCount),
+			zap.ByteString("key", idxRecord.key))
 
 		// TODO: check if need lock.
 		// Lock the row key to notify us that someone delete or update the row,
@@ -1370,6 +1373,8 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		}
 		taskCtx.addedCount++
 	}
+
+	log.L().Info("[debug-fetch] finish idxRecord info", zap.Int("scanCount", taskCtx.scanCount), zap.Int("addedCount", taskCtx.addedCount))
 	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
 	if errInTxn != nil {
 		sst.LogError("FlushKeyValSync %d paris err: %v.", len(w.wc.Fetch()), errInTxn.Error())

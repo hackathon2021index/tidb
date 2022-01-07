@@ -24,6 +24,9 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/tikv/client-go/v2/tikv"
+	"go.uber.org/zap"
+
 	ddlutil "github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/kv"
@@ -39,8 +42,6 @@ import (
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	decoder "github.com/pingcap/tidb/util/rowDecoder"
-	"github.com/tikv/client-go/v2/tikv"
-	"go.uber.org/zap"
 )
 
 type backfillWorkerType byte
@@ -262,7 +263,7 @@ func (w *backfillWorker) handleBackfillTask(d *ddlCtx, task *reorgBackfillTask, 
 		w.ddlWorker.reorgCtx.increaseRowCount(int64(taskCtx.addedCount))
 		w.ddlWorker.reorgCtx.mergeWarnings(taskCtx.warnings, taskCtx.warningsCount)
 
-		if num := result.scanCount - lastLogCount; num >= 30000 {
+		if num := result.scanCount - lastLogCount; num >= 0 {
 			lastLogCount = result.scanCount
 			logutil.BgLogger().Info("[ddl] backfill worker back fill index",
 				zap.Int("workerID", w.id),
