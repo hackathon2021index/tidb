@@ -5,8 +5,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/util/sqlexec"
+
+	"github.com/twmb/murmur3"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
@@ -15,7 +18,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	tidbcfg "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/util/logutil"
-	"github.com/twmb/murmur3"
 )
 
 func InitIndexOptimize() {
@@ -57,6 +59,11 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	}
 	var cfg backend.EngineConfig
 	cfg.TableInfo = &cpt
+	cfg.Local = &backend.LocalEngineConfig{
+		Compact:            true,
+		CompactThreshold:   1024 * _mb,
+		CompactConcurrency: 4,
+	}
 	//
 	var b [8]byte
 	binary.BigEndian.PutUint64(b[:], ddl.StartTs)
