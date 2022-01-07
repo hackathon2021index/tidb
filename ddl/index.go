@@ -552,14 +552,9 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		job.SnapshotVer = 0
 		job.SchemaState = model.StateWriteReorganization
 	case model.StateWriteReorganization:
-		currentVer, err := d.store.CurrentVersion(kv.GlobalTxnScope)
-		currentTS := job.StartTS
-		if err == nil {
-			currentTS = currentVer.Ver
-		}
 		// TODO: optimize index ddl.
 		if *sst.IndexDDLLightning {
-			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, currentTS, indexInfo.Unique})
+			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS, indexInfo.Unique})
 			if err != nil {
 				return ver, errors.Annotate(err, "PrepareIndexOp err")
 			}
@@ -593,7 +588,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
 				return ver, errors.Trace(err)
 			} else {
-				err = sst.FinishIndexOp(w.ctx, currentTS, ctx.(sqlexec.RestrictedSQLExecutor), tbl, indexInfo.Unique)
+				err = sst.FinishIndexOp(w.ctx, job.StartTS, ctx.(sqlexec.RestrictedSQLExecutor), tbl, indexInfo.Unique)
 				if err != nil {
 					logutil.BgLogger().Error("FinishIndexOp err2" + err.Error())
 					return ver, errors.Trace(err)
