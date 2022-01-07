@@ -54,7 +54,7 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	be, err := createLocalBackend(ctx, info, ddl.Unique)
 	if err != nil {
 		LogFatal("PrepareIndexOp.createLocalBackend err:%s.", err.Error())
-		return fmt.Errorf("PrepareIndexOp.createLocalBackend err:%w", err)
+		return errors.Errorf("PrepareIndexOp.createLocalBackend err:%w", err)
 	}
 	cpt := checkpoints.TidbTableInfo{
 		genNextTblId(),
@@ -87,11 +87,11 @@ func FlushKeyValSync(ctx context.Context, startTs uint64, cache *WorkerKVCache) 
 	}
 	lw, err := ei.getWriter()
 	if err != nil {
-		return fmt.Errorf("IndexOperator.getWriter err:%w", err)
+		return errors.Errorf("IndexOperator.getWriter err:%v", err)
 	}
 	err = lw.WriteRows(ctx, nil, kv.NewKvPairs(cache.Fetch()))
 	if err != nil {
-		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
+		return errors.Errorf("IndexOperator.WriteRows err:%v", err)
 	}
 	ei.size += cache.Size()
 	cache.Reset()
@@ -103,11 +103,11 @@ func fetchTableRegionSizeStats(tblId int64, exec sqlexec.RestrictedSQLExecutor) 
 	query := "SELECT REGION_ID, APPROXIMATE_SIZE FROM information_schema.TIKV_REGION_STATUS WHERE TABLE_ID = %?"
 	sn, err := exec.ParseWithParams(context.TODO(), query, tblId)
 	if err != nil {
-		return nil, fmt.Errorf("ParseWithParams err:%w", err)
+		return nil, errors.Errorf("ParseWithParams err: %v", err)
 	}
 	rows, _, err := exec.ExecRestrictedStmt(context.TODO(), sn)
 	if err != nil {
-		return nil, fmt.Errorf("ExecRestrictedStmt err:%w", err)
+		return nil, errors.Errorf("ExecRestrictedStmt err: %v", err)
 	}
 	// parse values;
 	ret = make(map[uint64]int64, len(rows))
@@ -117,7 +117,7 @@ func fetchTableRegionSizeStats(tblId int64, exec sqlexec.RestrictedSQLExecutor) 
 	)
 	for idx, row := range rows {
 		if 2 != row.Len() {
-			return nil, fmt.Errorf("row %d has %d fields", idx, row.Len())
+			return nil, errors.Errorf("row %d has %d fields", idx, row.Len())
 		}
 		regionID = row.GetUint64(0)
 		size = row.GetInt64(1)

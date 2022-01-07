@@ -1378,12 +1378,12 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 	}
 	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
 	if errInTxn != nil {
-		sst.LogError("FlushKeyValSync %d paris err:%s.", len(w.wc.Fetch()), errInTxn.Error())
+		sst.LogError("FlushKeyValSync %d paris err: %v.", len(w.wc.Fetch()), errInTxn.Error())
 	}
 	// sst.LogInfo("handleRange=%s(%s -> %s); %x -> %x.",
 	// 	handleRange.String(), handleRange.startKey, handleRange.endKey, minKey, maxKey)
 	logSlowOperations(time.Since(oprStartTime), "AddIndexBackfillDataInTxn", 3000)
-	return taskCtx, errInTxn
+	return taskCtx, errors.Trace(errInTxn)
 }
 
 // BackfillDataInTxn will backfill table index in a transaction, lock corresponding rowKey, if the value of rowKey is changed,

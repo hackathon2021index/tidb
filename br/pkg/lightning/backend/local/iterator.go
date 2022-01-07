@@ -19,7 +19,6 @@ import (
 	"context"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/pingcap/errors"
 	sst "github.com/pingcap/kvproto/pkg/import_sstpb"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
@@ -28,6 +27,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/logutil"
+	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/util/codec"
 )
 
@@ -127,7 +127,7 @@ func (d *duplicateIter) Next() bool {
 			return true
 		}
 		if d.duplicateAbort {
-			d.err = errors.Errorf("found duplicate key %s", d.curKey)
+			d.err = tidbkv.ErrKeyExists.FastGenByArgs(d.curKey, "unknown")
 			return false
 		}
 

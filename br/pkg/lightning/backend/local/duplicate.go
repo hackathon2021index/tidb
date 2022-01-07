@@ -331,7 +331,7 @@ func (manager *DuplicateManager) sendRequestToTiKV(ctx context.Context,
 				}
 				if manager.duplicateAbort && len(resp.Pairs) > 0 {
 					hasDupe.Store(true)
-					return errors.Errorf("found duplicate key %s", resp.Pairs[0])
+					return tidbkv.ErrKeyExists.FastGenByArgs(resp.Pairs[0].String(), "unknown")
 				}
 
 				if hasErr || resp.GetKeyError() != nil {
