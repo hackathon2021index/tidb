@@ -120,14 +120,14 @@ func (d *duplicateIter) Next() bool {
 		if d.err != nil {
 			return false
 		}
-		d.logger.Debug("[detect-debug] current key", zap.ByteString("curKey", d.curKey))
+		//d.logger.Debug("[detect-debug] current key", zap.ByteString("curKey", d.curKey))
 		if !bytes.Equal(d.nextKey, d.curKey) {
 			d.curKey, d.nextKey = d.nextKey, d.curKey[:0]
 			d.curRawKey = append(d.curRawKey[:0], d.iter.Key()...)
 			d.curVal = append(d.curVal[:0], d.iter.Value()...)
 			return true
 		}
-		d.logger.Info("[detect-dupe] local duplicate key detected",
+		d.logger.Debug("[detect-dupe] local duplicate key detected",
 			logutil.Key("key", d.curKey),
 			logutil.Key("prevValue", d.curVal),
 			logutil.Key("value", d.iter.Value()))
@@ -206,7 +206,7 @@ func newKeyIter(ctx context.Context, engineFile *File, opts *pebble.IterOptions)
 		newOpts.LowerBound = normalIterStartKey
 		opts = &newOpts
 	}
-	log.L().Info("duplicate detectStatus", zap.Bool("detect", engineFile.duplicateDetection), zap.Bool("abort", engineFile.duplicateAbort))
+	//log.L().Info("duplicate detectStatus", zap.Bool("detect", engineFile.duplicateDetection), zap.Bool("abort", engineFile.duplicateAbort))
 	if !engineFile.duplicateDetection {
 		return pebbleIter{Iterator: engineFile.db.NewIter(opts)}
 	}

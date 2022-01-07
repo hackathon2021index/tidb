@@ -585,7 +585,8 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		})
 		// TODO: optimize index ddl.
 		if err == nil && *sst.IndexDDLLightning {
-			ctx, err := w.sessPool.get()
+			var ctx sessionctx.Context
+			ctx, err = w.sessPool.get()
 			if err != nil {
 				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
 				err = errors.Trace(err)
@@ -1375,7 +1376,7 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		taskCtx.addedCount++
 	}
 
-	log.L().Info("[debug-fetch] finish idxRecord info", zap.Int("scanCount", taskCtx.scanCount), zap.Int("addedCount", taskCtx.addedCount))
+	//log.L().Info("[debug-fetch] finish idxRecord info", zap.Int("scanCount", taskCtx.scanCount), zap.Int("addedCount", taskCtx.addedCount))
 	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
 	if errInTxn != nil {
 		sst.LogError("FlushKeyValSync %d paris err: %v.", len(w.wc.Fetch()), errInTxn.Error())

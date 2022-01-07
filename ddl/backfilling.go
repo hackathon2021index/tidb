@@ -263,7 +263,7 @@ func (w *backfillWorker) handleBackfillTask(d *ddlCtx, task *reorgBackfillTask, 
 		w.ddlWorker.reorgCtx.increaseRowCount(int64(taskCtx.addedCount))
 		w.ddlWorker.reorgCtx.mergeWarnings(taskCtx.warnings, taskCtx.warningsCount)
 
-		if num := result.scanCount - lastLogCount; num >= 0 {
+		if num := result.scanCount - lastLogCount; num >= 30000 {
 			lastLogCount = result.scanCount
 			logutil.BgLogger().Info("[ddl] backfill worker back fill index",
 				zap.Int("workerID", w.id),
