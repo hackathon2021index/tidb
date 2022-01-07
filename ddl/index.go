@@ -1342,10 +1342,11 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 	taskCtx.nextKey = nextKey
 	taskCtx.done = taskDone
 
-	err = w.batchCheckUniqueKey(txn, idxRecords)
-	if err != nil {
-		return taskCtx, errors.Trace(err)
-	}
+	// lightning has its own uk detect
+	//err = w.batchCheckUniqueKey(txn, idxRecords)
+	//if err != nil {
+	//	return taskCtx, errors.Trace(err)
+	//}
 
 	for _, idxRecord := range idxRecords {
 		taskCtx.scanCount++
