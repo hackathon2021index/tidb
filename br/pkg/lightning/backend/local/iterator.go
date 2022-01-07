@@ -190,12 +190,13 @@ func newDuplicateIter(ctx context.Context, engineFile *File, opts *pebble.IterOp
 		zap.Int64("tableID", engineFile.tableInfo.ID),
 		zap.Stringer("engineUUID", engineFile.UUID))
 	return &duplicateIter{
-		ctx:        ctx,
-		iter:       engineFile.db.NewIter(newOpts),
-		engineFile: engineFile,
-		keyAdapter: engineFile.keyAdapter,
-		writeBatch: engineFile.duplicateDB.NewBatch(),
-		logger:     logger,
+		ctx:            ctx,
+		iter:           engineFile.db.NewIter(newOpts),
+		engineFile:     engineFile,
+		keyAdapter:     engineFile.keyAdapter,
+		writeBatch:     engineFile.duplicateDB.NewBatch(),
+		logger:         logger,
+		duplicateAbort: engineFile.duplicateAbort,
 	}
 }
 

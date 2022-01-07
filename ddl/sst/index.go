@@ -87,11 +87,11 @@ func FlushKeyValSync(ctx context.Context, startTs uint64, cache *WorkerKVCache) 
 	}
 	lw, err := ei.getWriter()
 	if err != nil {
-		return errors.Errorf("IndexOperator.getWriter err:%v", err)
+		return errors.Annotate(err, "IndexOperator.getWriter err")
 	}
 	err = lw.WriteRows(ctx, nil, kv.NewKvPairs(cache.Fetch()))
 	if err != nil {
-		return errors.Errorf("IndexOperator.WriteRows err:%v", err)
+		return errors.Annotate(err, "IndexOperator.WriteRows err")
 	}
 	ei.size += cache.Size()
 	cache.Reset()
@@ -155,16 +155,16 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	//
 	closeEngine, err1 := indexEngine.Close(ctx, cfg)
 	if err1 != nil {
-		return errors.Errorf("engine.Close err:%v", err1)
+		return errors.Annotate(err, "engine.Close err")
 	}
 	// use default value first;
 	err = closeEngine.Import(ctx, int64(config.SplitRegionSize))
 	if err != nil {
-		return errors.Errorf("engine.Import err:%v", err)
+		return errors.Annotate(err, "engine.Import err")
 	}
 	err = closeEngine.Cleanup(ctx)
 	if err != nil {
-		return errors.Errorf("engine.Cleanup err:%v", err)
+		return errors.Annotate(err, "engine.Cleanup err:%v")
 	}
 	if unique {
 		hasDupe, err := ei.backend.CollectRemoteDuplicateRows(ctx, tbl, ei.tbl.Name.O, &kv.SessionOptions{
@@ -172,10 +172,10 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 			SysVars: defaultImportantVariables,
 		})
 		if hasDupe {
-			return errors.Errorf("unique index conflicts detected: %v", err)
+			return errors.Annotate(err, "unique index conflicts detected")
 		} else if err != nil {
 			logutil.BgLogger().Error("fail to detect unique index conflicts, unknown index status", zap.Error(err))
-			return errors.Errorf("fail to detect unique index conflicts, unknown index status %v", err)
+			return errors.Annotate(err, "fail to detect unique index conflicts, unknown index status")
 		}
 	}
 	// should release before ReleaseEngine

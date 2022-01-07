@@ -16,7 +16,6 @@ package ddl
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -562,7 +561,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		if *sst.IndexDDLLightning {
 			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, currentTS, indexInfo.Unique})
 			if err != nil {
-				return ver, errors.Trace(fmt.Errorf("PrepareIndexOp err:%w", err))
+				return ver, errors.Annotate(err, "PrepareIndexOp err")
 			}
 		}
 
