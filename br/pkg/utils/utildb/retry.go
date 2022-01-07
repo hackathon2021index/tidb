@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	tmysql "github.com/pingcap/tidb/errno"
+	tidbkv "github.com/pingcap/tidb/kv"
 )
 
 var retryableServerError = []string{
@@ -109,6 +110,9 @@ func isSingleRetryableError(err error) bool {
 
 	switch err {
 	case nil, context.Canceled, context.DeadlineExceeded, io.EOF, sql.ErrNoRows:
+		return false
+	}
+	if tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), "1062") {
 		return false
 	}
 

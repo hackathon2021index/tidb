@@ -588,12 +588,12 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 			ctx, err := w.sessPool.get()
 			if err != nil {
 				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
-				return ver, errors.Trace(err)
+				err = errors.Trace(err)
 			} else {
 				err = sst.FinishIndexOp(w.ctx, job.StartTS, ctx.(sqlexec.RestrictedSQLExecutor), tbl, indexInfo.Unique)
 				if err != nil {
 					logutil.BgLogger().Error("FinishIndexOp err2" + err.Error())
-					return ver, errors.Trace(err)
+					err = errors.Trace(err)
 				}
 			}
 		}

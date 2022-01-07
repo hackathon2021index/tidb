@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/br/pkg/utils/utilmath"
 	"github.com/pingcap/tidb/br/pkg/version"
+	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/table"
@@ -1800,7 +1802,7 @@ WriteAndIngest:
 			err = local.writeAndIngestPairs(ctx, engineFile, region, pairStart, end, regionSplitSize, regionSplitKeys)
 			local.ingestConcurrency.Recycle(w)
 			if err != nil {
-				if common.IsContextCanceledError(err) {
+				if common.IsContextCanceledError(err) || tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
 					return err
 				}
 				_, regionStart, _ := codec.DecodeBytes(region.Region.StartKey, []byte{})
@@ -1847,7 +1849,7 @@ loopWrite:
 		var rangeStats rangeStats
 		metas, finishedRange, rangeStats, err = local.WriteToTiKV(ctx, engineFile, region, start, end, regionSplitSize, regionSplitKeys)
 		if err != nil {
-			if common.IsContextCanceledError(err) {
+			if common.IsContextCanceledError(err) || tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
 				return err
 			}
 
@@ -1985,7 +1987,7 @@ func (local *local) writeAndIngestByRanges(ctx context.Context, engineFile *File
 			backOffTime := time.Second
 			for i := 0; i < maxRetryTimes; i++ {
 				err = local.writeAndIngestByRange(ctx, engineFile, startKey, endKey, regionSplitSize, regionSplitKeys)
-				if err == nil || common.IsContextCanceledError(err) {
+				if err == nil || common.IsContextCanceledError(err) || tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
 					return
 				}
 				log.L().Warn("write and ingest by range failed",
