@@ -26,6 +26,9 @@ import (
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	pumpcli "github.com/pingcap/tidb-tools/tidb-binlog/pump_client"
+	"go.etcd.io/etcd/clientv3"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta"
@@ -41,8 +44,6 @@ import (
 	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/topsql"
-	"go.etcd.io/etcd/clientv3"
-	"go.uber.org/zap"
 )
 
 var (
@@ -774,8 +775,14 @@ func (w *worker) runDDLJob(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, 
 		ver, err = onSetDefaultValue(t, job)
 	case model.ActionAddIndex:
 		ver, err = w.onCreateIndex(d, t, job, false)
+		if err != nil {
+			logutil.BgLogger().Error("[ddl] fail to run add index job", zap.Error(err))
+		}
 	case model.ActionAddPrimaryKey:
 		ver, err = w.onCreateIndex(d, t, job, true)
+		if err != nil {
+			logutil.BgLogger().Error("[ddl] fail to run add index job", zap.Error(err))
+		}
 	case model.ActionDropIndex, model.ActionDropPrimaryKey:
 		ver, err = onDropIndex(t, job)
 	case model.ActionDropIndexes:
