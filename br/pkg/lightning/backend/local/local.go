@@ -1537,6 +1537,8 @@ func (local *local) WriteToTiKV(
 		}
 		count++
 		totalCount++
+		log.L().Info("[debug-iter] iterator count", zap.Int("count", count), zap.Int64("totalCount", totalCount),
+			zap.ByteString("key", iter.Key()), zap.ByteString("value", iter.Value()))
 
 		if count >= local.batchWriteKVPairs {
 			for i := range clients {
