@@ -16,6 +16,7 @@ package ddl
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -601,7 +602,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 				// if timeout, we should return, check for the owner and re-wait job done.
 				return ver, nil
 			}
-			if kv.ErrKeyExists.Equal(err) || errCancelledDDLJob.Equal(err) || errCantDecodeRecord.Equal(err) {
+			if kv.ErrKeyExists.Equal(err) || errCancelledDDLJob.Equal(err) || errCantDecodeRecord.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
 				logutil.BgLogger().Warn("[ddl] run add index job failed, convert job to rollback", zap.String("job", job.String()), zap.Error(err))
 				ver, err = convertAddIdxJob2RollbackJob(t, job, tblInfo, indexInfo, err)
 				if err1 := t.RemoveDDLReorgHandle(job, reorgInfo.elements); err1 != nil {
@@ -1364,7 +1365,7 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		// Create the index.
 		handle, err := w.index.Create(w.sessCtx, txn, idxRecord.vals, idxRecord.handle, idxRecord.rsData)
 		if err != nil {
-			if kv.ErrKeyExists.Equal(err) && idxRecord.handle.Equal(handle) {
+			if (kv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10))) && idxRecord.handle.Equal(handle) {
 				// Index already exists, skip it.
 				continue
 			}
