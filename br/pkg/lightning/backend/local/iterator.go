@@ -126,15 +126,14 @@ func (d *duplicateIter) Next() bool {
 			d.curVal = append(d.curVal[:0], d.iter.Value()...)
 			return true
 		}
+		d.logger.Info("[detect-dupe] local duplicate key detected",
+			logutil.Key("key", d.curKey),
+			logutil.Key("prevValue", d.curVal),
+			logutil.Key("value", d.iter.Value()))
 		if d.duplicateAbort {
 			d.err = tidbkv.ErrKeyExists.FastGenByArgs(d.curKey, "unknown")
 			return false
 		}
-
-		d.logger.Debug("[detect-dupe] local duplicate key detected",
-			logutil.Key("key", d.curKey),
-			logutil.Key("prevValue", d.curVal),
-			logutil.Key("value", d.iter.Value()))
 		if !recordFirst {
 			d.record(d.curRawKey, d.curVal)
 			recordFirst = true
