@@ -2,6 +2,7 @@ package sst
 
 import (
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
+	"github.com/pingcap/tidb/kv"
 )
 
 // woker is addIndexWorker. one worker one cache.
@@ -41,10 +42,11 @@ func (wc *WorkerKVCache) Fetch() []common.KvPair {
 	return wc.pairs
 }
 
-func (wc *WorkerKVCache) PushKeyValue(k, v []byte) {
+func (wc *WorkerKVCache) PushKeyValue(k, v []byte, h kv.Handle) {
 	p := common.KvPair{
-		Key: wc.cloneBytes(k),
-		Val: wc.cloneBytes(v),
+		Key:   wc.cloneBytes(k),
+		Val:   wc.cloneBytes(v),
+		RowID: h.IntValue(),
 	}
 	wc.pairs = append(wc.pairs, p)
 }
