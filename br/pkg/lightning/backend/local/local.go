@@ -687,7 +687,7 @@ func (e *File) ingestSSTs(metas []*sstMeta) error {
 		totalCount += m.totalCount
 		fileSize += m.fileSize
 	}
-	log.L().Info("write data to local DB",
+	log.L().Debug("write data to local DB",
 		zap.Int64("size", totalSize),
 		zap.Int64("kvs", totalCount),
 		zap.Int("files", len(metas)),
