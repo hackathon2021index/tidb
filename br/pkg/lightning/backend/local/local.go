@@ -1987,8 +1987,10 @@ func (local *local) writeAndIngestByRanges(ctx context.Context, engineFile *File
 			backOffTime := time.Second
 			for i := 0; i < maxRetryTimes; i++ {
 				err = local.writeAndIngestByRange(ctx, engineFile, startKey, endKey, regionSplitSize, regionSplitKeys)
-				if err == nil || common.IsContextCanceledError(err) || tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
+				if err == nil || common.IsContextCanceledError(err) {
 					return
+				} else if tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
+					break
 				}
 				log.L().Warn("write and ingest by range failed",
 					zap.Int("retry time", i+1), log.ShortError(err))
