@@ -164,7 +164,7 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	}
 	err = closeEngine.Cleanup(ctx)
 	if err != nil {
-		return errors.Annotate(err, "engine.Cleanup err:%v")
+		return errors.Annotate(err, "engine.Cleanup err")
 	}
 	if unique {
 		hasDupe, err := ei.backend.CollectRemoteDuplicateRows(ctx, tbl, ei.tbl.Name.O, &kv.SessionOptions{
