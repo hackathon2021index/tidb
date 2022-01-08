@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/docker/go-units"
 	sstpb "github.com/pingcap/kvproto/pkg/import_sstpb"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
@@ -120,7 +121,7 @@ func (_ glue_) Record(string, uint64) {
 }
 
 func generateLightningConfig(info ClusterInfo) *config.Config {
-	cfg := config.Config{}
+	cfg := config.NewConfig()
 	cfg.DefaultVarsForImporterAndLocalBackend()
 	name, err := ioutil.TempDir(*sortkv, "lightning")
 	if err != nil {
@@ -132,11 +133,14 @@ func generateLightningConfig(info ClusterInfo) *config.Config {
 	// cfg.TikvImporter.RangeConcurrency = 32
 	cfg.Checkpoint.Enable = false
 	cfg.TikvImporter.SortedKVDir = name
+	cfg.TikvImporter.RangeConcurrency = 64
+	cfg.TikvImporter.EngineMemCacheSize = 512 * units.MiB
+	cfg.TikvImporter.LocalWriterMemCacheSize = 128 * units.MiB
 	cfg.TikvImporter.DuplicateResolution = config.DupeResAlgNone
 	cfg.TiDB.PdAddr = info.PdAddr
 	cfg.TiDB.Host = "127.0.0.1"
 	cfg.TiDB.StatusPort = int(info.Status)
-	return &cfg
+	return cfg
 }
 
 func createLocalBackend(ctx context.Context, info ClusterInfo) (backend.Backend, error) {
