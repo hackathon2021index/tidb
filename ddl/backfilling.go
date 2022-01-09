@@ -24,6 +24,9 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/tikv/client-go/v2/tikv"
+	"go.uber.org/zap"
+
 	ddlutil "github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/kv"
@@ -39,8 +42,6 @@ import (
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	decoder "github.com/pingcap/tidb/util/rowDecoder"
-	"github.com/tikv/client-go/v2/tikv"
-	"go.uber.org/zap"
 )
 
 type backfillWorkerType byte

@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/br/pkg/utils/utilmath"
 	"github.com/pingcap/tidb/br/pkg/version"
+	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/table"
@@ -205,6 +207,7 @@ type File struct {
 
 	keyAdapter         KeyAdapter
 	duplicateDetection bool
+	duplicateAbort     bool
 	duplicateDB        *pebble.DB
 	errorMgr           *errormanager.ErrorManager
 }
@@ -825,6 +828,7 @@ type local struct {
 
 	checkTiKVAvaliable bool
 	duplicateDetection bool
+	duplicateAbort     bool
 	duplicateDB        *pebble.DB
 	errorMgr           *errormanager.ErrorManager
 }
@@ -976,6 +980,7 @@ func NewLocalBackend(
 		engineMemCacheSize:      int(cfg.TikvImporter.EngineMemCacheSize),
 		localWriterMemCacheSize: int64(cfg.TikvImporter.LocalWriterMemCacheSize),
 		duplicateDetection:      cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone,
+		duplicateAbort:          cfg.TikvImporter.DuplicateResolution == config.DupeResAlgAbort,
 		checkTiKVAvaliable:      cfg.App.CheckRequirements,
 		duplicateDB:             duplicateDB,
 		errorMgr:                errorMgr,
@@ -1304,12 +1309,14 @@ func (local *local) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, e
 		config:             engineCfg,
 		tableInfo:          cfg.TableInfo,
 		duplicateDetection: local.duplicateDetection,
+		duplicateAbort:     local.duplicateAbort,
 		duplicateDB:        local.duplicateDB,
 		errorMgr:           local.errorMgr,
 		keyAdapter:         keyAdapter,
 	})
 	engine := e.(*File)
 	engine.db = db
+	engine.TS = cfg.TableInfo.TSO
 	engine.sstIngester = dbSSTIngester{e: engine}
 	if err = engine.loadEngineMeta(); err != nil {
 		return errors.Trace(err)
@@ -1352,6 +1359,7 @@ func (local *local) CloseEngine(ctx context.Context, cfg *backend.EngineConfig, 
 			sstMetasChan:       make(chan metaOrFlush),
 			tableInfo:          cfg.TableInfo,
 			duplicateDetection: local.duplicateDetection,
+			duplicateAbort:     local.duplicateAbort,
 			duplicateDB:        local.duplicateDB,
 			errorMgr:           local.errorMgr,
 		}
@@ -1531,6 +1539,8 @@ func (local *local) WriteToTiKV(
 		}
 		count++
 		totalCount++
+		//log.L().Info("[debug-iter] iterator count", zap.Int("count", count), zap.Int64("totalCount", totalCount),
+		//	zap.ByteString("key", iter.Key()), zap.ByteString("value", iter.Value()))
 
 		if count >= local.batchWriteKVPairs {
 			for i := range clients {
@@ -1792,7 +1802,7 @@ WriteAndIngest:
 			err = local.writeAndIngestPairs(ctx, engineFile, region, pairStart, end, regionSplitSize, regionSplitKeys)
 			local.ingestConcurrency.Recycle(w)
 			if err != nil {
-				if common.IsContextCanceledError(err) {
+				if common.IsContextCanceledError(err) || tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
 					return err
 				}
 				_, regionStart, _ := codec.DecodeBytes(region.Region.StartKey, []byte{})
@@ -1839,7 +1849,7 @@ loopWrite:
 		var rangeStats rangeStats
 		metas, finishedRange, rangeStats, err = local.WriteToTiKV(ctx, engineFile, region, start, end, regionSplitSize, regionSplitKeys)
 		if err != nil {
-			if common.IsContextCanceledError(err) {
+			if common.IsContextCanceledError(err) || tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
 				return err
 			}
 
@@ -1979,6 +1989,8 @@ func (local *local) writeAndIngestByRanges(ctx context.Context, engineFile *File
 				err = local.writeAndIngestByRange(ctx, engineFile, startKey, endKey, regionSplitSize, regionSplitKeys)
 				if err == nil || common.IsContextCanceledError(err) {
 					return
+				} else if tidbkv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
+					break
 				}
 				log.L().Warn("write and ingest by range failed",
 					zap.Int("retry time", i+1), log.ShortError(err))

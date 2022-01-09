@@ -35,12 +35,13 @@ import (
 	"github.com/pingcap/errors"
 	filter "github.com/pingcap/tidb-tools/pkg/table-filter"
 	router "github.com/pingcap/tidb-tools/pkg/table-router"
+	"go.uber.org/atomic"
+	"go.uber.org/zap"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	tidbcfg "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/parser/mysql"
-	"go.uber.org/atomic"
-	"go.uber.org/zap"
 )
 
 const (
@@ -367,6 +368,10 @@ const (
 	// DupeResAlgRemove records all duplicate records like the 'record' algorithm and remove all information related to the
 	// duplicated rows. Users need to analyze the lightning_task_info.conflict_error_v1 table to add back the correct rows.
 	DupeResAlgRemove
+
+	// DupeResAlgAbort records all duplicate records like the 'record' algorithm and remove all information related to the
+	// duplicated rows. Users need to analyze the lightning_task_info.conflict_error_v1 table to add back the correct rows.
+	DupeResAlgAbort
 )
 
 func (dra *DuplicateResolutionAlgorithm) UnmarshalTOML(v interface{}) error {

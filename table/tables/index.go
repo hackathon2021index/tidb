@@ -16,13 +16,15 @@ package tables
 
 import (
 	"context"
-	"github.com/pingcap/tidb/ddl/sst"
 	"io"
 	"sync"
 	"time"
 
+	"github.com/pingcap/tidb/ddl/sst"
+
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/sessionctx"
@@ -197,7 +199,7 @@ func (c *index) Create(sctx sessionctx.Context, txn kv.Transaction, indexedValue
 	// TODO: optimize index ddl
 	if *sst.IndexDDLLightning && c.jobStartTs > 0 {
 		// err = sst.IndexOperator(ctx, c.jobStartTs, key, idxVal)
-		c.wc.PushKeyValue(key, idxVal)
+		c.wc.PushKeyValue(key, idxVal, h)
 		return nil, nil
 	}
 	if !distinct || skipCheck || opt.Untouched {

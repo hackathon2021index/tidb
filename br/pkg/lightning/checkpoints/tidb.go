@@ -25,6 +25,7 @@ type TidbDBInfo struct {
 
 type TidbTableInfo struct {
 	ID   int64
+	TSO  uint64
 	DB   string
 	Name string
 	Core *model.TableInfo

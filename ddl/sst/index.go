@@ -7,8 +7,11 @@ import (
 	"fmt"
 
 	"github.com/pingcap/errors"
+	"go.uber.org/zap"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
+	"github.com/pingcap/tidb/parser/mysql"
+	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/util/sqlexec"
 
 	"github.com/twmb/murmur3"
@@ -48,13 +51,14 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	LogInfo("PrepareIndexOp %+v", ddl)
 	// err == ErrNotFound
 	info := cluster
-	be, err := createLocalBackend(ctx, info)
+	be, err := createLocalBackend(ctx, info, ddl.Unique)
 	if err != nil {
 		LogFatal("PrepareIndexOp.createLocalBackend err:%s.", err.Error())
-		return fmt.Errorf("PrepareIndexOp.createLocalBackend err:%w", err)
+		return errors.Errorf("PrepareIndexOp.createLocalBackend err:%w", err)
 	}
 	cpt := checkpoints.TidbTableInfo{
 		genNextTblId(),
+		ddl.StartTs,
 		ddl.Schema,
 		ddl.Table.Name.String(),
 		ddl.Table,
@@ -73,50 +77,9 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	h.Write(b[:])
 	en, err := be.OpenEngine(ctx, &cfg, ddl.Table.Name.String(), int32(h.Sum32()))
 	if err != nil {
-		return fmt.Errorf("PrepareIndexOp.OpenEngine err:%w", err)
+		return errors.Errorf("PrepareIndexOp.OpenEngine err:%v", err)
 	}
-	ec.put(ddl.StartTs, &cfg, en, ddl.Table)
-	return nil
-}
-
-func IndexOperator(ctx context.Context, startTs uint64, k, v []byte) error {
-	LogFatal("IndexOperator logic error")
-	LogDebug("IndexOperator '%x','%x'", k, v)
-	ei, err := ec.getEngineInfo(startTs)
-	if err != nil {
-		return err
-	}
-	defer ec.releaseRef(startTs)
-	//
-
-	ei.pushKV(k, v)
-	kvSize := ei.size
-	if kvSize < flush_size {
-		return nil
-	}
-	//
-	return flushKvs(ctx, ei)
-}
-
-func flushKvs(ctx context.Context, ei *engineInfo) error {
-	if len(ei.kvs) <= 0 {
-		return nil
-	}
-	if ctx == nil {
-		// this may be nil,and used in WriteRows;
-		ctx = context.TODO()
-	}
-	LogInfo("flushKvs (%d)", len(ei.kvs))
-	lw, err := ei.getWriter()
-	if err != nil {
-		return fmt.Errorf("IndexOperator.getWriter err:%w", err)
-	}
-
-	err = lw.WriteRows(ctx, nil, kv.NewKvPairs(ei.kvs))
-	if err != nil {
-		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
-	}
-	ei.ResetCache()
+	ec.put(ddl.StartTs, &cfg, be, en, ddl.Table)
 	return nil
 }
 
@@ -129,13 +92,14 @@ func FlushKeyValSync(ctx context.Context, startTs uint64, cache *WorkerKVCache) 
 	}
 	lw, err := ei.getWriter()
 	if err != nil {
-		return fmt.Errorf("IndexOperator.getWriter err:%w", err)
+		return errors.Annotate(err, "IndexOperator.getWriter err")
 	}
 	err = lw.WriteRows(ctx, nil, kv.NewKvPairs(cache.Fetch()))
 	if err != nil {
-		return fmt.Errorf("IndexOperator.WriteRows err:%w", err)
+		return errors.Annotate(err, "IndexOperator.WriteRows err")
 	}
 	ei.size += cache.Size()
+	cache.Reset()
 	return nil
 }
 
@@ -144,11 +108,11 @@ func fetchTableRegionSizeStats(tblId int64, exec sqlexec.RestrictedSQLExecutor) 
 	query := "SELECT REGION_ID, APPROXIMATE_SIZE FROM information_schema.TIKV_REGION_STATUS WHERE TABLE_ID = %?"
 	sn, err := exec.ParseWithParams(context.TODO(), query, tblId)
 	if err != nil {
-		return nil, fmt.Errorf("ParseWithParams err:%w", err)
+		return nil, errors.Errorf("ParseWithParams err: %v", err)
 	}
 	rows, _, err := exec.ExecRestrictedStmt(context.TODO(), sn)
 	if err != nil {
-		return nil, fmt.Errorf("ExecRestrictedStmt err:%w", err)
+		return nil, errors.Errorf("ExecRestrictedStmt err: %v", err)
 	}
 	// parse values;
 	ret = make(map[uint64]int64, len(rows))
@@ -158,7 +122,7 @@ func fetchTableRegionSizeStats(tblId int64, exec sqlexec.RestrictedSQLExecutor) 
 	)
 	for idx, row := range rows {
 		if 2 != row.Len() {
-			return nil, fmt.Errorf("row %d has %d fields", idx, row.Len())
+			return nil, errors.Errorf("row %d has %d fields", idx, row.Len())
 		}
 		regionID = row.GetUint64(0)
 		size = row.GetInt64(1)
@@ -170,13 +134,15 @@ func fetchTableRegionSizeStats(tblId int64, exec sqlexec.RestrictedSQLExecutor) 
 	return ret, nil
 }
 
-func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedSQLExecutor) error {
+func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedSQLExecutor, tbl table.Table, unique bool) error {
 	ei, err := ec.getEngineInfo(startTs)
 	if err != nil {
 		return err
 	}
-	flushKvs(ctx, ei)
-	defer ec.releaseRef(startTs)
+	defer func() {
+		ec.releaseRef(startTs)
+		ec.ReleaseEngine(startTs)
+	}()
 	//
 	LogInfo("FinishIndexOp %d;kvs=%d.", startTs, ei.size)
 	//
@@ -196,23 +162,38 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	if err1 != nil {
 		return errors.Annotate(err1, "engine.Close err")
 	}
-	//tls, err := common.NewTLS("", "", "", cluster.PdAddr)
-	//if err != nil {
-	//	return errors.Annotate(err, "fail to create tls")
-	//}
-	//switchTiKVMode(tls, ctx, sstpb.SwitchMode_Import)
-	//defer switchTiKVMode(tls, ctx, sstpb.SwitchMode_Normal)
-	// use default value first;
 	err = closeEngine.Import(ctx, int64(config.SplitRegionSize))
 	if err != nil {
-		return fmt.Errorf("engine.Import err:%w", err)
+		return errors.Annotate(err, "engine.Import err")
 	}
 	err = closeEngine.Cleanup(ctx)
 	if err != nil {
-		return fmt.Errorf("engine.Cleanup err:%w", err)
+		return errors.Annotate(err, "engine.Cleanup err")
+	}
+	if unique {
+		hasDupe, err := ei.backend.CollectRemoteDuplicateRows(ctx, tbl, ei.tbl.Name.O, &kv.SessionOptions{
+			SQLMode: mysql.ModeStrictAllTables,
+			SysVars: defaultImportantVariables,
+		})
+		if hasDupe {
+			return errors.Annotate(err, "unique index conflicts detected")
+		} else if err != nil {
+			logutil.BgLogger().Error("fail to detect unique index conflicts, unknown index status", zap.Error(err))
+			return errors.Annotate(err, "fail to detect unique index conflicts, unknown index status")
+		}
 	}
 	// should release before ReleaseEngine
 	ec.releaseRef(startTs)
 	ec.ReleaseEngine(startTs)
 	return nil
+}
+
+var defaultImportantVariables = map[string]string{
+	"max_allowed_packet":      "67108864",
+	"div_precision_increment": "4",
+	"time_zone":               "SYSTEM",
+	"lc_time_names":           "en_US",
+	"default_week_format":     "0",
+	"block_encryption_mode":   "aes-128-ecb",
+	"group_concat_max_len":    "1024",
 }

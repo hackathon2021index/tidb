@@ -16,13 +16,10 @@ package ddl
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/pingcap/tidb/ddl/sst"
-	"github.com/pingcap/tidb/util/sqlexec"
 
 	tableutil "github.com/pingcap/tidb/table/tables/util"
 
@@ -35,6 +32,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/ddl/sst"
 	"github.com/pingcap/tidb/infoschema"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta"
@@ -52,6 +50,7 @@ import (
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	decoder "github.com/pingcap/tidb/util/rowDecoder"
+	"github.com/pingcap/tidb/util/sqlexec"
 	"github.com/pingcap/tidb/util/timeutil"
 )
 
@@ -556,9 +555,9 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 	case model.StateWriteReorganization:
 		// TODO: optimize index ddl.
 		if *sst.IndexDDLLightning {
-			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
+			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS, indexInfo.Unique})
 			if err != nil {
-				return ver, errors.Trace(fmt.Errorf("PrepareIndexOp err:%w", err))
+				return ver, errors.Annotate(err, "PrepareIndexOp err")
 			}
 		}
 
@@ -585,13 +584,16 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		})
 		// TODO: optimize index ddl.
 		if err == nil && *sst.IndexDDLLightning {
-			ctx, err := w.sessPool.get()
+			var ctx sessionctx.Context
+			ctx, err = w.sessPool.get()
 			if err != nil {
 				logutil.BgLogger().Error("FinishIndexOp err1" + err.Error())
+				err = errors.Trace(err)
 			} else {
-				err = sst.FinishIndexOp(w.ctx, job.StartTS, ctx.(sqlexec.RestrictedSQLExecutor))
+				err = sst.FinishIndexOp(w.ctx, job.StartTS, ctx.(sqlexec.RestrictedSQLExecutor), tbl, indexInfo.Unique)
 				if err != nil {
 					logutil.BgLogger().Error("FinishIndexOp err2" + err.Error())
+					err = errors.Trace(err)
 				}
 			}
 		}
@@ -600,7 +602,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 				// if timeout, we should return, check for the owner and re-wait job done.
 				return ver, nil
 			}
-			if kv.ErrKeyExists.Equal(err) || errCancelledDDLJob.Equal(err) || errCantDecodeRecord.Equal(err) {
+			if kv.ErrKeyExists.Equal(err) || errCancelledDDLJob.Equal(err) || errCantDecodeRecord.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10)) {
 				logutil.BgLogger().Warn("[ddl] run add index job failed, convert job to rollback", zap.String("job", job.String()), zap.Error(err))
 				ver, err = convertAddIdxJob2RollbackJob(t, job, tblInfo, indexInfo, err)
 				if err1 := t.RemoveDDLReorgHandle(job, reorgInfo.elements); err1 != nil {
@@ -1336,10 +1338,11 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 	taskCtx.nextKey = nextKey
 	taskCtx.done = taskDone
 
-	err = w.batchCheckUniqueKey(txn, idxRecords)
-	if err != nil {
-		return taskCtx, errors.Trace(err)
-	}
+	// lightning has its own uk detect
+	//err = w.batchCheckUniqueKey(txn, idxRecords)
+	//if err != nil {
+	//	return taskCtx, errors.Trace(err)
+	//}
 
 	for _, idxRecord := range idxRecords {
 		taskCtx.scanCount++
@@ -1348,6 +1351,8 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		if idxRecord.skip {
 			continue
 		}
+		//log.L().Info("[debug-fetch] idxRecord info", zap.Int("scanCount", taskCtx.scanCount), zap.Int("addedCount", taskCtx.addedCount),
+		//	zap.ByteString("key", idxRecord.key))
 
 		// TODO: check if need lock.
 		// Lock the row key to notify us that someone delete or update the row,
@@ -1360,7 +1365,7 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		// Create the index.
 		handle, err := w.index.Create(w.sessCtx, txn, idxRecord.vals, idxRecord.handle, idxRecord.rsData)
 		if err != nil {
-			if kv.ErrKeyExists.Equal(err) && idxRecord.handle.Equal(handle) {
+			if (kv.ErrKeyExists.Equal(err) || strings.Contains(err.Error(), strconv.FormatInt(mysql.ErrDupEntry, 10))) && idxRecord.handle.Equal(handle) {
 				// Index already exists, skip it.
 				continue
 			}
@@ -1369,15 +1374,16 @@ func (w *addIndexWorker) backfillDataInTxnByRead(handleRange reorgBackfillTask) 
 		}
 		taskCtx.addedCount++
 	}
+
+	//log.L().Info("[debug-fetch] finish idxRecord info", zap.Int("scanCount", taskCtx.scanCount), zap.Int("addedCount", taskCtx.addedCount))
 	errInTxn = sst.FlushKeyValSync(context.TODO(), w.jobStartTs, w.wc)
-	w.wc.Reset()
 	if errInTxn != nil {
-		sst.LogError("FlushKeyValSync %d paris err:%s.", len(w.wc.Fetch()), errInTxn.Error())
+		sst.LogError("FlushKeyValSync %d paris err: %v.", len(w.wc.Fetch()), errInTxn.Error())
 	}
 	// sst.LogInfo("handleRange=%s(%s -> %s); %x -> %x.",
 	// 	handleRange.String(), handleRange.startKey, handleRange.endKey, minKey, maxKey)
 	logSlowOperations(time.Since(oprStartTime), "AddIndexBackfillDataInTxn", 3000)
-	return taskCtx, errInTxn
+	return taskCtx, errors.Trace(errInTxn)
 }
 
 // BackfillDataInTxn will backfill table index in a transaction, lock corresponding rowKey, if the value of rowKey is changed,

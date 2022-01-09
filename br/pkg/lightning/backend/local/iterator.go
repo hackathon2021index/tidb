@@ -27,6 +27,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/logutil"
+	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/util/codec"
 )
 
@@ -60,6 +61,7 @@ type duplicateIter struct {
 	writeBatch     *pebble.Batch
 	writeBatchSize int64
 	logger         log.Logger
+	duplicateAbort bool
 }
 
 func (d *duplicateIter) Seek(key []byte) bool {
@@ -118,6 +120,7 @@ func (d *duplicateIter) Next() bool {
 		if d.err != nil {
 			return false
 		}
+		//d.logger.Debug("[detect-debug] current key", zap.ByteString("curKey", d.curKey))
 		if !bytes.Equal(d.nextKey, d.curKey) {
 			d.curKey, d.nextKey = d.nextKey, d.curKey[:0]
 			d.curRawKey = append(d.curRawKey[:0], d.iter.Key()...)
@@ -128,6 +131,10 @@ func (d *duplicateIter) Next() bool {
 			logutil.Key("key", d.curKey),
 			logutil.Key("prevValue", d.curVal),
 			logutil.Key("value", d.iter.Value()))
+		if d.duplicateAbort {
+			d.err = tidbkv.ErrKeyExists.FastGenByArgs(d.curKey, "unknown")
+			return false
+		}
 		if !recordFirst {
 			d.record(d.curRawKey, d.curVal)
 			recordFirst = true
@@ -183,12 +190,13 @@ func newDuplicateIter(ctx context.Context, engineFile *File, opts *pebble.IterOp
 		zap.Int64("tableID", engineFile.tableInfo.ID),
 		zap.Stringer("engineUUID", engineFile.UUID))
 	return &duplicateIter{
-		ctx:        ctx,
-		iter:       engineFile.db.NewIter(newOpts),
-		engineFile: engineFile,
-		keyAdapter: engineFile.keyAdapter,
-		writeBatch: engineFile.duplicateDB.NewBatch(),
-		logger:     logger,
+		ctx:            ctx,
+		iter:           engineFile.db.NewIter(newOpts),
+		engineFile:     engineFile,
+		keyAdapter:     engineFile.keyAdapter,
+		writeBatch:     engineFile.duplicateDB.NewBatch(),
+		logger:         logger,
+		duplicateAbort: engineFile.duplicateAbort,
 	}
 }
 
@@ -198,6 +206,7 @@ func newKeyIter(ctx context.Context, engineFile *File, opts *pebble.IterOptions)
 		newOpts.LowerBound = normalIterStartKey
 		opts = &newOpts
 	}
+	//log.L().Info("duplicate detectStatus", zap.Bool("detect", engineFile.duplicateDetection), zap.Bool("abort", engineFile.duplicateAbort))
 	if !engineFile.duplicateDetection {
 		return pebbleIter{Iterator: engineFile.db.NewIter(opts)}
 	}
