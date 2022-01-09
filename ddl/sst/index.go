@@ -65,6 +65,11 @@ func PrepareIndexOp(ctx context.Context, ddl DDLInfo) error {
 	}
 	var cfg backend.EngineConfig
 	cfg.TableInfo = &cpt
+	cfg.Local = &backend.LocalEngineConfig{
+		Compact:            true,
+		CompactThreshold:   1024 * _mb,
+		CompactConcurrency: 4,
+	}
 	//
 	var b [8]byte
 	binary.BigEndian.PutUint64(b[:], ddl.StartTs)
@@ -155,9 +160,8 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	//
 	closeEngine, err1 := indexEngine.Close(ctx, cfg)
 	if err1 != nil {
-		return errors.Annotate(err, "engine.Close err")
+		return errors.Annotate(err1, "engine.Close err")
 	}
-	// use default value first;
 	err = closeEngine.Import(ctx, int64(config.SplitRegionSize))
 	if err != nil {
 		return errors.Annotate(err, "engine.Import err")
