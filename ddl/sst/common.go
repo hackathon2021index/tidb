@@ -130,10 +130,9 @@ func generateLightningConfig(info ClusterInfo) *config.Config {
 	}
 	os.Remove(name)
 	LogDebug("./ %s.", name)
-	// cfg.TikvImporter.RangeConcurrency = 32
 	cfg.Checkpoint.Enable = false
 	cfg.TikvImporter.SortedKVDir = name
-	cfg.TikvImporter.RangeConcurrency = 16
+	cfg.TikvImporter.RangeConcurrency = 32
 	cfg.TikvImporter.EngineMemCacheSize = 512 * units.MiB
 	cfg.TikvImporter.LocalWriterMemCacheSize = 128 * units.MiB
 	cfg.TikvImporter.DuplicateResolution = config.DupeResAlgNone
