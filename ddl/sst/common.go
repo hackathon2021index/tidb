@@ -10,11 +10,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/docker/go-units"
+	sstpb "github.com/pingcap/kvproto/pkg/import_sstpb"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
+	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/glue"
+	"github.com/pingcap/tidb/br/pkg/lightning/tikv"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/util/logutil"
@@ -116,7 +121,7 @@ func (_ glue_) Record(string, uint64) {
 }
 
 func generateLightningConfig(info ClusterInfo) *config.Config {
-	cfg := config.Config{}
+	cfg := config.NewConfig()
 	cfg.DefaultVarsForImporterAndLocalBackend()
 	name, err := ioutil.TempDir(*sortkv, "lightning")
 	if err != nil {
@@ -125,14 +130,16 @@ func generateLightningConfig(info ClusterInfo) *config.Config {
 	}
 	os.Remove(name)
 	LogDebug("./ %s.", name)
-	// cfg.TikvImporter.RangeConcurrency = 32
 	cfg.Checkpoint.Enable = false
 	cfg.TikvImporter.SortedKVDir = name
+	cfg.TikvImporter.RangeConcurrency = 32
+	cfg.TikvImporter.EngineMemCacheSize = 512 * units.MiB
+	cfg.TikvImporter.LocalWriterMemCacheSize = 128 * units.MiB
 	cfg.TikvImporter.DuplicateResolution = config.DupeResAlgNone
 	cfg.TiDB.PdAddr = info.PdAddr
 	cfg.TiDB.Host = "127.0.0.1"
 	cfg.TiDB.StatusPort = int(info.Status)
-	return &cfg
+	return cfg
 }
 
 func createLocalBackend(ctx context.Context, info ClusterInfo) (backend.Backend, error) {
@@ -143,4 +150,27 @@ func createLocalBackend(ctx context.Context, info ClusterInfo) (backend.Backend,
 	}
 	var g glue_
 	return local.NewLocalBackend(ctx, tls, cfg, &g, int(limit), nil)
+}
+
+func switchTiKVMode(tls *common.TLS, ctx context.Context, mode sstpb.SwitchMode) {
+	// It is fine if we miss some stores which did not switch to Import mode,
+	// since we're running it periodically, so we exclude disconnected stores.
+	// But it is essential all stores be switched back to Normal mode to allow
+	// normal operation.
+	var minState tikv.StoreState
+	if mode == sstpb.SwitchMode_Import {
+		minState = tikv.StoreStateOffline
+	} else {
+		minState = tikv.StoreStateDisconnected
+	}
+	// we ignore switch mode failure since it is not fatal.
+	// no need log the error, it is done in kv.SwitchMode already.
+	_ = tikv.ForAllStores(
+		ctx,
+		tls,
+		minState,
+		func(c context.Context, store *tikv.Store) error {
+			return tikv.SwitchMode(c, tls, store.Address, mode)
+		},
+	)
 }

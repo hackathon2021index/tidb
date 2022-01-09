@@ -17,11 +17,12 @@ package ddl
 import (
 	"context"
 	"fmt"
-	"github.com/pingcap/tidb/ddl/sst"
-	"github.com/pingcap/tidb/util/sqlexec"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/pingcap/tidb/ddl/sst"
+	"github.com/pingcap/tidb/util/sqlexec"
 
 	tableutil "github.com/pingcap/tidb/table/tables/util"
 
@@ -555,7 +556,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 	case model.StateWriteReorganization:
 		// TODO: optimize index ddl.
 		if *sst.IndexDDLLightning {
-			sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
+			err = sst.PrepareIndexOp(w.ctx, sst.DDLInfo{job.SchemaName, tblInfo, job.StartTS})
 			if err != nil {
 				return ver, errors.Trace(fmt.Errorf("PrepareIndexOp err:%w", err))
 			}

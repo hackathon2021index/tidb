@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/pingcap/errors"
+
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/util/sqlexec"
 
@@ -192,8 +194,14 @@ func FinishIndexOp(ctx context.Context, startTs uint64, exec sqlexec.RestrictedS
 	//
 	closeEngine, err1 := indexEngine.Close(ctx, cfg)
 	if err1 != nil {
-		return fmt.Errorf("engine.Close err:%w", err1)
+		return errors.Annotate(err1, "engine.Close err")
 	}
+	//tls, err := common.NewTLS("", "", "", cluster.PdAddr)
+	//if err != nil {
+	//	return errors.Annotate(err, "fail to create tls")
+	//}
+	//switchTiKVMode(tls, ctx, sstpb.SwitchMode_Import)
+	//defer switchTiKVMode(tls, ctx, sstpb.SwitchMode_Normal)
 	// use default value first;
 	err = closeEngine.Import(ctx, int64(config.SplitRegionSize))
 	if err != nil {
